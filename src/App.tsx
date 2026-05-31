@@ -17,17 +17,19 @@ import {
   Info,
   AlertCircle,
   Zap,
-  Languages
+  Languages,
+  HelpCircle
 } from "lucide-react";
 import { PRELOADED_KANJI, KanjiCard } from "./data/preloadedKanji";
 import { LearningStatus, UserProgress } from "./types";
 import KanjiCardView from "./components/KanjiCardView";
 import { PRELOADED_VERBS, JFTVerb } from "./data/preloadedVerbs";
 import VerbCardView from "./components/VerbCardView";
+import QuizView from "./components/QuizView";
 
 export default function App() {
   // Navigation tabs
-  const [activeTab, setActiveTab] = useState<"learn" | "test" | "verbs">("learn");
+  const [activeTab, setActiveTab] = useState<"learn" | "test" | "verbs" | "quiz">("learn");
 
   // Main Kanji Deck State (Preloaded base cards + any PDF parsed results + custom AI generated ones)
   const [cards, setCards] = useState<KanjiCard[]>(() => {
@@ -395,6 +397,16 @@ export default function App() {
                 }`}
               >
                 <Zap className="w-4 h-4" /> Learn Verbs (ක්‍රියාපද)
+              </button>
+              <button
+                onClick={() => setActiveTab("quiz")}
+                className={`px-6 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 ${
+                  activeTab === "quiz"
+                    ? "bg-white text-[#52796f] shadow-xs font-bold"
+                    : "text-[#84a98c] hover:bg-white/50"
+                }`}
+              >
+                <HelpCircle className="w-4 h-4" /> Super Quiz (ප්‍රශ්නාවලිය)
               </button>
             </div>
           </div>
@@ -964,6 +976,15 @@ export default function App() {
               </div>
             )}
           </div>
+        )}
+
+        {/* TAB 4: ADVANCED MULTIPLE CHOICE SUPER QUIZ */}
+        {activeTab === "quiz" && (
+          <QuizView
+            kanjiCards={cards}
+            verbsList={verbs}
+            onBackToLearn={() => setActiveTab("learn")}
+          />
         )}
       </main>
 
