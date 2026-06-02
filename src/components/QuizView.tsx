@@ -18,11 +18,15 @@ import {
   X,
   VolumeX,
   Languages,
-  Tags
+  Tags,
+  Ear,
+  Mic
 } from "lucide-react";
 import { KanjiCard } from "../data/preloadedKanji";
 import { JFTVerb } from "../data/preloadedVerbs";
 import { JFTAdjective } from "../data/preloadedAdjectives";
+import { PRELOADED_PARAGRAPHS, JFTParagraph, ParagraphToken } from "../data/paragraphTemplates";
+
 
 export type QuizMode =
   | "kanji_reading" // Kanji -> Hiragana
@@ -56,9 +60,50 @@ interface QuizViewProps {
 
 export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBackToLearn }: QuizViewProps) {
   // Setup States
+  const [activeQuizSubMode, setActiveQuizSubMode] = useState<"standard" | "paragraph">("standard");
   const [quizMode, setQuizMode] = useState<QuizMode>("kanji_reading");
   const [questionCount, setQuestionCount] = useState<number>(10);
   const [gameState, setGameState] = useState<"setup" | "playing" | "summary">("setup");
+
+  // Paragraph trainer states
+  const [activeParagraphIdx, setActiveParagraphIdx] = useState<number>(0);
+  const [isListening, setIsListening] = useState<boolean>(false);
+  const [spokenText, setSpokenText] = useState<string>("");
+  const [isSpeakingResultShown, setIsSpeakingResultShown] = useState<boolean>(false);
+  const [selectedWordToken, setSelectedWordToken] = useState<ParagraphToken | null>(null);
+  const [recognitionError, setRecognitionError] = useState<string>("");
+
+  const [kanjiOKSet, setKanjiOKSet] = useState<Set<string>>(new Set());
+  const [verbsOKSet, setVerbsOKSet] = useState<Set<string>>(new Set());
+  const [adjOKSet, setAdjOKSet] = useState<Set<string>>(new Set());
+
+  // Load OK checklists reactively
+  useEffect(() => {
+    try {
+      const kSaved = localStorage.getItem("jft_cards_progress");
+      const vSaved = localStorage.getItem("jft_verbs_progress");
+      const aSaved = localStorage.getItem("jft_adjectives_progress");
+
+      const kProgress = kSaved ? JSON.parse(kSaved) : {};
+      const vProgress = vSaved ? JSON.parse(vSaved) : {};
+      const aProgress = aSaved ? JSON.parse(aSaved) : {};
+
+      const kOK = new Set<string>();
+      const vOK = new Set<string>();
+      const aOK = new Set<string>();
+
+      Object.entries(kProgress).forEach(([id, status]) => { if (status === "OK") kOK.add(id); });
+      Object.entries(vProgress).forEach(([id, status]) => { if (status === "OK") vOK.add(id); });
+      Object.entries(aProgress).forEach(([id, status]) => { if (status === "OK") aOK.add(id); });
+
+      setKanjiOKSet(kOK);
+      setVerbsOKSet(vOK);
+      setAdjOKSet(aOK);
+    } catch (e) {
+      console.error("Error loading JFT progress metrics:", e);
+    }
+  }, [gameState, activeQuizSubMode]);
+
 
   // Game States
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
@@ -73,6 +118,7 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
   // Audio mute/unmute option
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
 
+
   // Pronounce helper
   const speakJapanese = (text: string) => {
     if (!soundEnabled) return;
@@ -86,6 +132,123 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
       window.speechSynthesis.speak(utterance);
     }
   };
+
+  // Start Voice Recognition to compare speech
+  const startSpeechRecognition = () => {
+    const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognitionAPI) {
+      setRecognitionError("කණගාටුයි! ඔබගේ බ්‍රවුසරයේ කථන හඳුනාගැනීම (Speech Recognition) සහය නොදක්වයි. කරුණාකර Google Chrome හෝ Microsoft Edge භාවිත කරන්න.");
+      return;
+    }
+
+    try {
+      setRecognitionError("");
+      const rec = new SpeechRecognitionAPI();
+      rec.lang = "ja-JP";
+      rec.continuous = false;
+      rec.interimResults = false;
+
+      rec.onstart = () => {
+        setIsListening(true);
+        setSpokenText("");
+        setIsSpeakingResultShown(false);
+      };
+
+      rec.onerror = (event: any) => {
+        console.error("Speech Recognition error:", event);
+        if (event.error === "not-allowed") {
+          setRecognitionError("මයික්‍රෆෝනයට අවසර ලැබී නොමැත. කරුණාකර browser settings මඟින් මයික්‍රෆෝන අවසර ලබා දෙන්න.");
+        } else {
+          setRecognitionError(`කථන හඳුනා ගැනීමේ දෝෂයකි: ${event.error}`);
+        }
+        setIsListening(false);
+      };
+
+      rec.onend = () => {
+        setIsListening(false);
+      };
+
+      rec.onresult = (event: any) => {
+        const resultText = event.results[0][0].transcript;
+        setSpokenText(resultText);
+        setIsSpeakingResultShown(true);
+      };
+
+      rec.start();
+    } catch (e: any) {
+      console.error(e);
+      setRecognitionError("මයික්‍රෆෝන සන්නිවේදනය අසාර්ථකයි.");
+    }
+  };
+
+  // Speaks hiragana letter-by-letter slowly
+  const spellWordSlowly = (furigana: string) => {
+    if (!furigana) return;
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      // First speak normally but slightly slow
+      const u1 = new SpeechSynthesisUtterance(furigana);
+      u1.lang = "ja-JP";
+      u1.rate = 0.55;
+      window.speechSynthesis.speak(u1);
+
+      // Speak each character separately after 1.5 seconds
+      const characters = furigana.split("");
+      characters.forEach((char, idx) => {
+        if (char.trim() === "") return;
+        setTimeout(() => {
+          const uChar = new SpeechSynthesisUtterance(char);
+          uChar.lang = "ja-JP";
+          uChar.rate = 0.45;
+          window.speechSynthesis.speak(uChar);
+        }, 1300 + idx * 800);
+      });
+    }
+  };
+
+  // Speaks entire paragraph text
+  const speakParagraphText = (paragraph: JFTParagraph) => {
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      const stringText = paragraph.tokens.map(t => t.text).join("");
+      const utterance = new SpeechSynthesisUtterance(stringText);
+      utterance.lang = "ja-JP";
+      utterance.rate = 0.78;
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  // Checks if user has marked this database element as OK (Learned)
+  const isTokenLearned = (token: ParagraphToken) => {
+    if (token.type === "kanji") {
+      const match = kanjiCards.find(c => c.kanji === token.kanji || c.kanji === token.text);
+      return match ? kanjiOKSet.has(match.id) : false;
+    }
+    if (token.type === "verb") {
+      const match = verbsList.find(v => v.kanji === token.kanji || v.dictionary === token.text || v.masu === token.text);
+      return match ? verbsOKSet.has(match.id) : false;
+    }
+    if (token.type === "adjective") {
+      const match = adjectivesList.find(a => a.kanji === token.kanji || a.kanji === token.text);
+      return match ? adjOKSet.has(match.id) : false;
+    }
+    return false;
+  };
+
+  // High quality overlap comparison for speaker
+  const matchToken = (token: ParagraphToken, spoken: string) => {
+    if (!spoken) return false;
+    const cleanSpoken = spoken.toLowerCase().replace(/[\s、。！？\?\!]/g, "");
+    const tText = token.text.toLowerCase().replace(/[\s、。！？\?\!]/g, "");
+    const tKanji = token.kanji ? token.kanji.toLowerCase().replace(/[\s、。！？\?\!]/g, "") : "";
+    const tFurigana = token.furigana ? token.furigana.toLowerCase().replace(/[\s、。！？\?\!]/g, "") : "";
+    return (
+      (tText && cleanSpoken.includes(tText)) ||
+      (tKanji && cleanSpoken.includes(tKanji)) ||
+      (tFurigana && cleanSpoken.includes(tFurigana))
+    );
+  };
+
 
   // Generate the Quiz Questions
   const startQuiz = () => {
@@ -261,10 +424,38 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
 
   return (
     <div className="w-full space-y-6" id="super-quiz-wrapper">
+      {/* Subtab selection header for Quiz views */}
+      {gameState === "setup" && (
+        <div className="max-w-3xl mx-auto flex gap-2 p-1.5 bg-[#f0ede6] rounded-2xl border border-[#e9e2d7]">
+          <button
+            type="button"
+            onClick={() => setActiveQuizSubMode("standard")}
+            className={`flex-1 py-3 text-center text-xs font-black rounded-xl transition flex items-center justify-center gap-2 cursor-pointer ${
+              activeQuizSubMode === "standard"
+                ? "bg-white text-[#52796f] shadow-xs"
+                : "text-[#84a98c] hover:text-[#52796f] hover:bg-white/40"
+            }`}
+          >
+            <HelpCircle className="w-4 h-4 text-[#bc6c25]" /> බහුවරණ ප්‍රශ්නාවලිය (Standard MCQ Quiz)
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveQuizSubMode("paragraph")}
+            className={`flex-1 py-3 text-center text-xs font-black rounded-xl transition flex items-center justify-center gap-2 cursor-pointer ${
+              activeQuizSubMode === "paragraph"
+                ? "bg-white text-[#52796f] shadow-xs"
+                : "text-[#84a98c] hover:text-[#52796f] hover:bg-white/40"
+            }`}
+          >
+            <Mic className="w-4 h-4 text-[#bc6c25]" /> ඡේද සවන්දීම සහ කථනය (Paragraph Speech Arena)
+          </button>
+        </div>
+      )}
+
       <AnimatePresence mode="wait">
         
         {/* --- 1. SETUP / CONFIGURATION SCREEN --- */}
-        {gameState === "setup" && (
+        {gameState === "setup" && activeQuizSubMode === "standard" && (
           <motion.div
             key="quiz-setup"
             initial={{ opacity: 0, y: 15 }}
@@ -493,6 +684,327 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
                 <Play className="w-4 h-4 fill-white" /> ප්‍රශ්නාවලිය ආරම්භ කරන්න (Start Super Quiz)
               </button>
             </div>
+          </motion.div>
+        )}
+
+        {/* --- 1B. PARAGRAPH SPEECH & LISTENING ARENA --- */}
+        {gameState === "setup" && activeQuizSubMode === "paragraph" && (
+          <motion.div
+            key="paragraph-trainer"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            transition={{ duration: 0.3 }}
+            className="max-w-3xl mx-auto space-y-6 text-left"
+          >
+            {/* Paragraph selector card banner */}
+            <div className="bg-white rounded-[28px] border border-[#e9e2d7] p-6 shadow-sm space-y-4">
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black bg-[#ece2d0] text-[#bc6c25]">
+                    <Ear className="w-3.5 h-3.5" /> JFT JAPANESE SPEECH & LISTENING ARENA
+                  </span>
+                  <h3 className="text-lg font-black text-[#354f52]">
+                    ඡේද සහ කථන පුහුණුව (Reading & Speaking Trainer)
+                  </h3>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    ඔබ උගත් (Mathakai ✔️) කන්ජි, ක්‍රියාපද (Verbs) සහ විශේෂණ පද (Adjectives) අඩංගු ජපන් ඡේද කියවන්න සහ ශබ්ද නඟා පුහුණු වන්න.
+                  </p>
+                </div>
+                
+                {/* Selector controllers */}
+                <div className="flex items-center gap-1 bg-[#f0ede6] p-1 rounded-xl shrink-0 border border-[#e9e2d7]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveParagraphIdx((prev) => (prev > 0 ? prev - 1 : PRELOADED_PARAGRAPHS.length - 1));
+                      setSpokenText("");
+                      setIsSpeakingResultShown(false);
+                      setSelectedWordToken(null);
+                    }}
+                    className="p-1.5 cursor-pointer bg-white text-[#bc6c25] hover:bg-[#fdfbf7] rounded-lg text-xs font-bold transition shadow-xs"
+                  >
+                    ◀ Prev
+                  </button>
+                  <span className="font-mono font-black text-xs text-[#354f52] px-2.5">
+                    {activeParagraphIdx + 1} / {PRELOADED_PARAGRAPHS.length}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveParagraphIdx((prev) => (prev < PRELOADED_PARAGRAPHS.length - 1 ? prev + 1 : 0));
+                      setSpokenText("");
+                      setIsSpeakingResultShown(false);
+                      setSelectedWordToken(null);
+                    }}
+                    className="p-1.5 cursor-pointer bg-white text-[#bc6c25] hover:bg-[#fdfbf7] rounded-lg text-xs font-bold transition shadow-xs"
+                  >
+                    Next ▶
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Paragraph display container */}
+            {(() => {
+              const para = PRELOADED_PARAGRAPHS[activeParagraphIdx];
+              const matchedCount = para.tokens.filter(t => isListening || spokenText ? matchToken(t, spokenText) : false).length;
+              const matchingPercentage = para.tokens.length > 0 ? Math.round((matchedCount / para.tokens.length) * 100) : 0;
+
+              return (
+                <div className="space-y-6">
+                  {/* Paragraph cardboard */}
+                  <div className="bg-white rounded-[32px] border border-[#e9e2d7] p-8 shadow-sm space-y-6 relative overflow-hidden">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-[#f0ede6] pb-4">
+                      <div>
+                        <span className="font-mono text-[9px] text-[#84a98c] font-black uppercase tracking-wider block">
+                          SCENARIO {activeParagraphIdx + 1}
+                        </span>
+                        <h4 className="font-extrabold text-[#354f52] text-md">
+                          🇱🇰 {para.titleSinhala} • <span className="text-[#bc6c25]">{para.titleEnglish}</span>
+                        </h4>
+                      </div>
+
+                      {/* Speaks total text */}
+                      <button
+                        type="button"
+                        onClick={() => speakParagraphText(para)}
+                        className="py-1.5 px-3 bg-[#cad2c5]/40 hover:bg-[#cad2c5] text-[#354f52] transition-colors rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap"
+                        title="මුළු ඡේදයටම සවන් දෙන්න"
+                      >
+                        <Volume2 className="w-4 h-4 text-[#52796f]" /> Listen (ඡේදයට සවන්දීම)
+                      </button>
+                    </div>
+
+                    {/* Styled Paragraph tokens box */}
+                    <div className="p-6 md:p-8 bg-amber-50/15 border-2 border-dashed border-[#e9e2d7] rounded-[24px] min-h-[160px] flex flex-wrap gap-x-3.5 gap-y-7 items-end justify-center text-center">
+                      {para.tokens.map((token) => {
+                        const learned = isTokenLearned(token);
+                        const correctMatched = isListening || spokenText ? matchToken(token, spokenText) : false;
+
+                        // Rule 1: "Kanjiwala mathakai kiyala select karapu ewala kanjiya witharak pharagraph ekata danna."
+                        // Rule 2: "Verbwalai adjectiveswaai daddi furiganath aniwaryen kanjiyata udin danna."
+                        const needsRuby = token.type === "verb" || token.type === "adjective";
+                        const displayKanjiOnly = token.type === "kanji" && learned;
+
+                        let tokenStyle = "text-[#2f3e46] hover:text-[#bc6c25]";
+                        if (correctMatched) {
+                          tokenStyle = "text-emerald-700 bg-emerald-50 border border-emerald-300 shadow-xs px-2.5 py-1 rounded-xl -my-1 font-extrabold scale-102";
+                        } else if (learned) {
+                          tokenStyle = "text-[#52796f] underline decoration-dashed decoration-[#cad2c5] decoration-2 font-semibold";
+                        }
+
+                        return (
+                          <div
+                            key={token.id}
+                            onClick={() => {
+                              setSelectedWordToken(token);
+                              if (token.furigana) {
+                                spellWordSlowly(token.furigana);
+                              } else {
+                                speakJapanese(token.text);
+                              }
+                            }}
+                            className={`cursor-pointer transition duration-150 select-none ${tokenStyle}`}
+                            title={`ක්ලික් කරන්න: ${token.englishMeaning}`}
+                          >
+                            {needsRuby && token.kanji && token.furigana ? (
+                              <ruby className="ruby-position-over font-semibold text-xl md:text-2xl tracking-normal">
+                                {token.kanji}
+                                <rt className="text-[10px] md:text-xs font-mono text-amber-800 font-extrabold pb-0.5">{token.furigana}</rt>
+                              </ruby>
+                            ) : displayKanjiOnly && token.kanji ? (
+                              <span className="font-extrabold text-xl md:text-2xl text-[#2f3e46] border-b-2 border-emerald-500/40">
+                                {token.kanji}
+                              </span>
+                            ) : (
+                              <span className="font-bold text-xl md:text-2xl">
+                                {token.text}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <p className="text-[10px] text-slate-400 font-bold block text-center">
+                      💡 ඡේදයේ ඇති ඕනෑම වචනයක් මත ක්ලික් කර එහි අකුරු කියවන ආකාරය (Hiragana Spelling) නැවත සෙමින් සවන් දෙන්න!
+                    </p>
+
+                    {/* Translates */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs pt-4 border-t border-[#f0ede6]">
+                      <div className="p-4 bg-slate-50 border border-slate-100 rounded-xl space-y-1.5">
+                        <span className="font-extrabold text-slate-400 block text-[9px] tracking-wider uppercase">ENGLISH TRANSLATION:</span>
+                        <p className="text-slate-600 font-medium leading-relaxed italic">"{para.fullEnglishTranslation}"</p>
+                      </div>
+                      <div className="p-4 bg-[#cad2c5]/10 border border-[#cad2c5]/35 rounded-xl space-y-1.5">
+                        <span className="font-extrabold text-[#52796f] block text-[9px] tracking-wider uppercase">🇱🇰 සිංහල පරිවර්තනය:</span>
+                        <p className="text-[#354f52] font-semibold leading-relaxed">"{para.fullSinhalaTranslation}"</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Speech Practicer Panel */}
+                  <div className="bg-white rounded-[28px] border border-[#e9e2d7] p-6 shadow-sm space-y-4">
+                    <h4 className="font-bold text-xs text-[#bc6c25] uppercase tracking-wider flex items-center gap-1.5">
+                      🎙️ Spoken Practice & Voice Comparison (කථන පුහුණුව)
+                    </h4>
+
+                    <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-6 p-4.5 bg-[#fcfaf2] border border-[#ece2d0] rounded-xl">
+                      <div className="space-y-1">
+                        <p className="text-xs text-slate-700 font-bold">
+                          මයික්‍රෆෝනය සක්‍රීය කර ඉහත ජපන් ඡේදය ශබ්ද නඟා කියවන්න.
+                        </p>
+                        <p className="text-[11px] text-[#84a98c] font-medium leading-relaxed">
+                          ඔබ නිවැරදිව ශබ්ද කළ වචන ඡේදය තුළ <strong>කොළ පැහැයෙන්</strong> වෙනස් වනු ඇත!
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={startSpeechRecognition}
+                        disabled={isListening}
+                        className={`py-3 px-5 rounded-xl font-black text-xs shadow-xs transition flex items-center justify-center gap-2 cursor-pointer shrink-0 ${
+                          isListening
+                            ? "bg-rose-500 text-white animate-pulse"
+                            : "bg-[#bc6c25] hover:bg-[#8f521b] text-white"
+                        }`}
+                      >
+                        {isListening ? (
+                          <>
+                            <span className="w-2 h-2 bg-white rounded-full animate-ping"></span>
+                            Listening now... (කියවන්න...)
+                          </>
+                        ) : (
+                          <>
+                            <Mic className="w-4 h-4 text-white" />
+                            කථනය අරඹන්න (Start Recording)
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {recognitionError && (
+                      <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 font-bold rounded-xl text-xs">
+                        ⚠️ Error: {recognitionError}
+                      </div>
+                    )}
+
+                    {/* Results Checker overlay */}
+                    {isSpeakingResultShown && (
+                      <div className="p-4 rounded-xl bg-[#cad2c5]/20 border border-[#cad2c5]/40 space-y-3">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-black text-[#52796f] uppercase tracking-wider">
+                            🎙️ Spoken Recognition Transcript (ඔබ පැවසූ දෙය):
+                          </span>
+                          <span className="font-extrabold text-[#354f52]">
+                            Matched: {matchedCount} / {para.tokens.length} words ({matchingPercentage}%)
+                          </span>
+                        </div>
+
+                        <p className="p-3 bg-white border border-[#e9e2d7] rounded-xl text-sm font-extrabold text-[#2f3e46] font-mono leading-relaxed italic">
+                          " {spokenText || "කිසිදු ශබ්දයක් හඳුනාගත නොහැකි විය. කරුණාකර මයික්‍රෆෝනය අසල සෙමෙන් නැවත උත්සාහ කරන්න."} "
+                        </p>
+
+                        <div className="w-full bg-[#f0ede6] h-2.5 rounded-full overflow-hidden">
+                          <div
+                            className="bg-[#52796f] h-full rounded-full transition-all duration-300"
+                            style={{ width: `${matchingPercentage}%` }}
+                          ></div>
+                        </div>
+
+                        <p className="text-xs font-bold text-[#354f52] leading-relaxed">
+                          {matchingPercentage === 100
+                            ? "නියමයි මචං! ඔබ මුළු ඡේදයේම වචන 100%ක්ම නිවැරදිව උච්චාරණය කළා! (100% Correct Match!) 🏆💖"
+                            : matchingPercentage >= 60
+                            ? "ඉතා විශිෂ්ටයි! වචන බොහෝමයක් නිවැරදිව ශබ්ද කළා. නොගැලපෙන වචන මත ක්ලික් කර නැවත අකුරු කියවා පුහුණු වන්න. 👍🔥"
+                            : "හොඳ උත්සාහයක්! වචන මත ක්ලික් කර හඬ සවන් දී, සෙමෙන් නැවත ශබ්ද නඟා උත්සාහ කරන්න. (Good effort, retry!) 💪✨"}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Word Explorer popup card */}
+                  {selectedWordToken && (
+                    <motion.div
+                      key={selectedWordToken.id}
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="bg-white rounded-[28px] border-2 border-[#bc6c25] p-5 shadow-sm relative text-left"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setSelectedWordToken(null)}
+                        className="absolute right-4 top-4 p-1 rounded-lg hover:bg-[#f0ede6] text-[#84a98c] hover:text-slate-700 transition"
+                      >
+                        <X className="w-4.5 h-4.5" />
+                      </button>
+
+                      <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-center">
+                        {/* Audio spelling */}
+                        <div className="md:col-span-4 text-center p-4 bg-[#fcfaf2] border border-[#e9e2d7] rounded-xl flex flex-col items-center justify-center space-y-2">
+                          <span className="text-[9px] font-black tracking-widest text-[#bc6c25] uppercase pb-1 border-b border-dashed border-[#e9e2d7] w-full">WORD DISCOVERY</span>
+                          
+                          <h4 className="font-extrabold text-xl text-[#2f3e46]">{selectedWordToken.text}</h4>
+                          {selectedWordToken.furigana && (
+                            <p className="font-mono font-bold text-xs text-[#bc6c25] bg-[#ece2d0] px-2.5 py-0.5 rounded-full">
+                              {selectedWordToken.furigana}
+                            </p>
+                          )}
+                          <div className="flex gap-2 w-full pt-1.5">
+                            <button
+                              type="button"
+                              onClick={() => speakJapanese(selectedWordToken.text)}
+                              className="flex-1 py-1.5 bg-[#f0ede6] hover:bg-[#e9e2d7] text-[#52796f] font-extrabold text-[10px] rounded-lg transition-colors flex items-center justify-center gap-1 shadow-xs cursor-pointer"
+                            >
+                              <Volume2 className="w-3.5 h-3.5" /> Pronounce
+                            </button>
+                            {selectedWordToken.furigana && (
+                              <button
+                                type="button"
+                                onClick={() => spellWordSlowly(selectedWordToken.furigana)}
+                                className="flex-1 py-1.5 bg-[#ece2d0] hover:bg-[#ece2d0]/80 text-[#bc6c25] font-extrabold text-[10px] rounded-lg transition-colors flex items-center justify-center gap-1 shadow-xs cursor-pointer"
+                              >
+                                <Play className="w-3.5 h-3.5 focus:scale-95" /> Spelling
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Meanings */}
+                        <div className="md:col-span-8 space-y-3.5">
+                          <h4 className="text-xs font-black text-[#52796f] uppercase border-b border-[#f0ede6] pb-1">
+                            Sinhala & English Translations (අර්ථය සහ උච්චාරණය)
+                          </h4>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                            <div className="p-3 bg-[#cad2c5]/20 border border-[#cad2c5]/40 rounded-xl">
+                              <span className="text-[9px] font-black text-[#354f52] block mb-0.5">🇱🇰 සිංහල අර්ථය:</span>
+                              <p className="font-bold text-[#2f3e46]">{selectedWordToken.sinhalaMeaning || "අර්ථය සපයා නැත"}</p>
+                            </div>
+                            <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                              <span className="text-[9px] font-black text-slate-400 block mb-0.5">English meaning:</span>
+                              <p className="font-bold text-slate-600">{selectedWordToken.englishMeaning || "Not provided"}</p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <span className="text-[9px] px-2 py-0.5 rounded-md font-bold uppercase tracking-wider bg-slate-100 text-slate-500 font-mono">
+                              Type: {selectedWordToken.type}
+                            </span>
+                            {isTokenLearned(selectedWordToken) && (
+                              <span className="text-[9px] px-2 py-0.5 rounded-md font-bold uppercase tracking-wider bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center gap-1">
+                                <Check className="w-2.5 h-2.5" /> Checked OK (මතකයි)
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </div>
+              );
+            })()}
           </motion.div>
         )}
 
