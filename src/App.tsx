@@ -25,11 +25,13 @@ import { LearningStatus, UserProgress } from "./types";
 import KanjiCardView from "./components/KanjiCardView";
 import { PRELOADED_VERBS, JFTVerb } from "./data/preloadedVerbs";
 import VerbCardView from "./components/VerbCardView";
+import { PRELOADED_ADJECTIVES, JFTAdjective } from "./data/preloadedAdjectives";
+import AdjectiveCardView from "./components/AdjectiveCardView";
 import QuizView from "./components/QuizView";
 
 export default function App() {
   // Navigation tabs
-  const [activeTab, setActiveTab] = useState<"learn" | "test" | "verbs" | "quiz">("learn");
+  const [activeTab, setActiveTab] = useState<"learn" | "test" | "verbs" | "adjectives" | "quiz">("learn");
 
   // Main Kanji Deck State (Preloaded base cards + any PDF parsed results + custom AI generated ones)
   const [cards, setCards] = useState<KanjiCard[]>(() => {
@@ -96,6 +98,24 @@ export default function App() {
   const [activeVerbsFilter, setActiveVerbsFilter] = useState<"ALL" | "NOT_YET" | "OK">("ALL");
   const [verbsPracticePerspective, setVerbsPracticePerspective] = useState<"sinhala" | "japanese">("japanese");
 
+  // JFT Adjectives State
+  const [adjectives] = useState<JFTAdjective[]>(PRELOADED_ADJECTIVES);
+  const [adjectivesProgress, setAdjectivesProgress] = useState<UserProgress>(() => {
+    const saved = localStorage.getItem("jft_adjectives_progress");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return {};
+  });
+
+  // Adjectives search, filter states
+  const [adjectivesSearchQuery, setAdjectivesSearchQuery] = useState("");
+  const [activeAdjectivesFilter, setActiveAdjectivesFilter] = useState<"ALL" | "NOT_YET" | "OK">("ALL");
+  const [activeAdjectiveTypeFilter, setActiveAdjectiveTypeFilter] = useState<"ALL" | "I" | "NA">("ALL");
+  const [adjectivesPracticePerspective, setAdjectivesPracticePerspective] = useState<"sinhala" | "japanese">("japanese");
+
   // Persist State Changes
   useEffect(() => {
     localStorage.setItem("jft_kanji_cards", JSON.stringify(cards));
@@ -108,6 +128,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("jft_verbs_progress", JSON.stringify(verbsProgress));
   }, [verbsProgress]);
+
+  useEffect(() => {
+    localStorage.setItem("jft_adjectives_progress", JSON.stringify(adjectivesProgress));
+  }, [adjectivesProgress]);
 
   // Set up testing/shuffled deck whenever we enter knowledge check mode or cards list updates
   useEffect(() => {
@@ -144,6 +168,14 @@ export default function App() {
     }));
   };
 
+  // Update an adjective progress status
+  const handleUpdateAdjectiveStatus = (adjId: string, status: LearningStatus) => {
+    setAdjectivesProgress((prev) => ({
+      ...prev,
+      [adjId]: status,
+    }));
+  };
+
   // Quick reset metrics
   const handleResetProgress = () => {
     if (window.confirm("සැබවින්ම දත්ත මකාදමා නැවත මුල සිට ආරම්භ කිරීමට අවශ්‍ය ද? Reset learning progress data?")) {
@@ -156,6 +188,14 @@ export default function App() {
     if (window.confirm("සැබවින්ම ක්‍රියාපද ප්‍රගති දත්ත මකාදමා නැවත මුල සිට ආරම්භ කිරීමට අවශ්‍ය ද? Reset verbs learning progress data?")) {
       setVerbsProgress({});
       localStorage.removeItem("jft_verbs_progress");
+    }
+  };
+
+  // Reset adjectives learning progress
+  const handleResetAdjectivesProgress = () => {
+    if (window.confirm("සැබවින්ම විශේෂණ පද ප්‍රගති දත්ත මකාදමා නැවත මුල සිට ආරම්භ කිරීමට අවශ්‍ය ද? Reset adjectives learning progress data?")) {
+      setAdjectivesProgress({});
+      localStorage.removeItem("jft_adjectives_progress");
     }
   };
 
@@ -318,6 +358,33 @@ export default function App() {
     return matchesFilter && matchesSearch;
   });
 
+  // Adjective scores/ratios and filtering
+  const okAdjectivesCount = adjectives.reduce((sum, a) => (adjectivesProgress[a.id] === "OK" ? sum + 1 : sum), 0);
+  const notYetAdjectivesCount = adjectives.reduce((sum, a) => (adjectivesProgress[a.id] === "NOT_YET" ? sum + 1 : sum), 0);
+  const percentAdjectivesComplete = adjectives.length > 0 ? Math.round((okAdjectivesCount / adjectives.length) * 100) : 0;
+
+  const filteredAdjectives = adjectives.filter((adj) => {
+    const cardStatus = adjectivesProgress[adj.id] || "UNSTUDIED";
+    const matchesStatus =
+      activeAdjectivesFilter === "ALL" ||
+      (activeAdjectivesFilter === "NOT_YET" && cardStatus === "NOT_YET") ||
+      (activeAdjectivesFilter === "OK" && cardStatus === "OK");
+
+    const matchesType =
+      activeAdjectiveTypeFilter === "ALL" ||
+      (activeAdjectiveTypeFilter === "I" && adj.type === "i") ||
+      (activeAdjectiveTypeFilter === "NA" && adj.type === "na");
+
+    const query = adjectivesSearchQuery.toLowerCase().trim();
+    const matchesSearch =
+      !query ||
+      adj.sinhalaMeaning.toLowerCase().includes(query) ||
+      adj.kanji.toLowerCase().includes(query) ||
+      adj.hiragana.toLowerCase().includes(query);
+
+    return matchesStatus && matchesType && matchesSearch;
+  });
+
   return (
     <div className="min-h-screen flex flex-col bg-[#fdfbf7] text-[#2f3e46]" id="main-jft-container">
       {/* Dynamic Header */}
@@ -397,6 +464,16 @@ export default function App() {
                 }`}
               >
                 <Zap className="w-4 h-4" /> Learn Verbs (ක්‍රියාපද)
+              </button>
+              <button
+                onClick={() => setActiveTab("adjectives")}
+                className={`px-6 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 ${
+                  activeTab === "adjectives"
+                    ? "bg-white text-[#52796f] shadow-xs font-bold"
+                    : "text-[#84a98c] hover:bg-white/50"
+                }`}
+              >
+                <Languages className="w-4 h-4" /> Learn Adjectives (විශේෂණ)
               </button>
               <button
                 onClick={() => setActiveTab("quiz")}
@@ -978,11 +1055,244 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 4: ADVANCED MULTIPLE CHOICE SUPER QUIZ */}
+        {/* TAB 4: LEARN JFT ADJECTIVES */}
+        {activeTab === "adjectives" && (
+          <div className="space-y-6">
+            {/* Header / Banner summary bar */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6" id="adjectives-stats-box">
+              {/* Box 1: Info Deck progress */}
+              <div className="lg:col-span-8 bg-white p-6 rounded-[28px] border border-[#e9e2d7] shadow-sm flex flex-col justify-between">
+                <div>
+                  <h3 className="font-display font-black text-lg text-[#354f52] flex items-center gap-2">
+                    <Languages className="w-5 h-5 text-[#bc6c25]" /> JFT-Basic Adjectives Course (ජේ.එෆ්.ටී. විශේෂණ පද)
+                  </h3>
+                  <p className="text-xs text-[#84a98c] mt-1.5 leading-relaxed">
+                    මෙම කොටසෙන් ඔබට JFT-Basic විභාගයට අත්‍යවශ්‍ය වන විශේෂණ පද (Adjectives) 127ම අධ්‍යයනය කළ හැක. 
+                    මෙහි <strong>i-adjectives (ඉ-විශේෂණ)</strong> සහ <strong>na-adjectives (න-විශේෂණ)</strong> ලෙස කාණ්ඩ දෙකක් ඇත.
+                  </p>
+                </div>
+
+                {/* Progress bar info */}
+                <div className="mt-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pt-4 border-t border-[#f0ede6]">
+                  <div className="flex-1 w-full space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-[#52796f] uppercase tracking-wider">විශේෂණ ප්‍රගතිය (Adjectives Study Score)</span>
+                      <span className="text-sm font-extrabold text-[#354f52]">{percentAdjectivesComplete}%</span>
+                    </div>
+                    <div className="w-full bg-[#f0ede6] rounded-full h-2 overflow-hidden shadow-inner">
+                      <div
+                        className="bg-[#52796f] h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${percentAdjectivesComplete}%` }}
+                      ></div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4 shrink-0 bg-[#fdfbf7] border border-[#e9e2d7] rounded-xl p-2.5 px-4">
+                    <div className="text-center">
+                      <span className="text-[10px] font-bold text-[#84a98c] block">මතකයි</span>
+                      <span className="text-sm font-extrabold text-[#52796f]">✔️ {okAdjectivesCount}</span>
+                    </div>
+                    <div className="border-l border-[#e9e2d7] pl-4 text-center">
+                      <span className="text-[10px] font-bold text-[#84a98c] block">තවම ඕනේ</span>
+                      <span className="text-sm font-extrabold text-[#bc6c25]">❌ {notYetAdjectivesCount}</span>
+                    </div>
+                    <div className="border-l border-[#e9e2d7] pl-4 text-center">
+                      <span className="text-[10px] font-bold text-[#84a98c] block">මුළු එකතුව</span>
+                      <span className="text-sm font-extrabold text-[#354f52]">📋 {adjectives.length}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Box 2: Actions & Configuration Panel */}
+              <div className="lg:col-span-4 bg-[#ece2d0]/25 border border-[#e9e2d7] p-6 rounded-[24px] shadow-sm flex flex-col justify-between">
+                <div>
+                  <h4 className="font-display font-bold text-xs text-[#bc6c25] uppercase tracking-widest flex items-center gap-1.5" id="adj-config-title">
+                    ⚙️ Settings & Performance
+                  </h4>
+                  <p className="text-xs text-[#2f3e46] mt-1.5 leading-relaxed">
+                    සෑම කාඩ්පතක්ම ක්ලික් කර එහි අනෙක් පැත්ත හරවා වැඩිදුර විස්තර අධ්‍යයනය කරන්න.
+                  </p>
+                </div>
+
+                <div className="space-y-2 mt-4">
+                  <button
+                    onClick={handleResetAdjectivesProgress}
+                    className="w-full py-2.5 bg-white border border-[#bc6c25] hover:bg-[#fdfbf7] rounded-xl text-xs font-bold text-[#bc6c25] transition shadow-xs cursor-pointer"
+                  >
+                    🧹 Clear Adjectives Progress Data
+                  </button>
+                  <div className="p-3 bg-white border border-[#e9e2d7] rounded-xl text-[10px] text-slate-500 font-semibold leading-relaxed">
+                    💡 Click the speaker button inside any adjective card to hear the audio pronunciation.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Practice Mode Toggle & Search Filter controls */}
+            <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-4 p-5 bg-white rounded-[24px] border border-[#e9e2d7] shadow-sm">
+              
+              {/* Practice Toggle (Sinhala Front vs Japanese Front) */}
+              <div className="flex flex-col gap-1.5 shrink-0">
+                <span className="text-[10px] font-bold text-[#84a98c] uppercase tracking-wider flex items-center gap-1">
+                  <Languages className="w-3 h-3" /> Practice Deck View (භාෂාව)
+                </span>
+                <div className="flex gap-1 bg-[#f0ede6] p-1 rounded-xl self-start border border-[#e9e2d7]">
+                  <button
+                    type="button"
+                    onClick={() => setAdjectivesPracticePerspective("sinhala")}
+                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-all duration-150 flex items-center gap-1.5 ${
+                      adjectivesPracticePerspective === "sinhala"
+                        ? "bg-white text-[#52796f] shadow-xs font-black"
+                        : "text-[#84a98c] hover:text-[#52796f]"
+                    }`}
+                  >
+                    🇱🇰 <strong>Sinhala Practice</strong>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdjectivesPracticePerspective("japanese")}
+                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-all duration-150 flex items-center gap-1.5 ${
+                      adjectivesPracticePerspective === "japanese"
+                        ? "bg-white text-[#52796f] shadow-xs font-black"
+                        : "text-[#84a98c] hover:text-[#52796f]"
+                    }`}
+                  >
+                    🇯🇵 <strong>Japanese Practice</strong>
+                  </button>
+                </div>
+              </div>
+
+              {/* Adjective Type (i-adjectives vs na-adjectives) */}
+              <div className="flex flex-col gap-1.5 shrink-0">
+                <span className="text-[10px] font-bold text-[#84a98c] uppercase tracking-wider">
+                  Adjective Category (කාණ්ඩය)
+                </span>
+                <div className="flex items-center gap-1 bg-[#f0ede6] p-1 rounded-xl border border-[#e9e2d7] self-start">
+                  <button
+                    type="button"
+                    onClick={() => setActiveAdjectiveTypeFilter("ALL")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 ${
+                      activeAdjectiveTypeFilter === "ALL"
+                        ? "bg-white text-[#52796f] shadow-xs font-black"
+                        : "text-[#84a98c] hover:text-[#52796f]"
+                    }`}
+                  >
+                    All Types
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveAdjectiveTypeFilter("I")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 ${
+                      activeAdjectiveTypeFilter === "I"
+                        ? "bg-white text-[#bc6c25] shadow-xs font-black"
+                        : "text-[#84a98c] hover:text-[#bc6c25]"
+                    }`}
+                  >
+                    ı-adjectives
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveAdjectiveTypeFilter("NA")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 ${
+                      activeAdjectiveTypeFilter === "NA"
+                        ? "bg-white text-[#52796f] shadow-xs font-black"
+                        : "text-[#84a98c] hover:text-[#52796f]"
+                    }`}
+                  >
+                    na-adjectives
+                  </button>
+                </div>
+              </div>
+
+              {/* Status Filter Toggle */}
+              <div className="flex flex-col gap-1.5 shrink-0">
+                <span className="text-[10px] font-bold text-[#84a98c] uppercase tracking-wider">
+                  Status Filtering (පෙරහන්)
+                </span>
+                <div className="flex items-center gap-1 bg-[#f0ede6] p-1 rounded-xl border border-[#e9e2d7] self-start">
+                  <button
+                    type="button"
+                    onClick={() => setActiveAdjectivesFilter("ALL")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 ${
+                      activeAdjectivesFilter === "ALL"
+                        ? "bg-white text-[#52796f] shadow-xs font-black"
+                        : "text-[#84a98c] hover:text-[#52796f]"
+                    }`}
+                  >
+                    📖 All ({adjectives.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveAdjectivesFilter("NOT_YET")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 ${
+                      activeAdjectivesFilter === "NOT_YET"
+                        ? "bg-white text-[#bc6c25] shadow-xs font-black"
+                        : "text-[#84a98c] hover:text-[#bc6c25]"
+                    }`}
+                  >
+                    ❌ Not Yet ({notYetAdjectivesCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveAdjectivesFilter("OK")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 ${
+                      activeAdjectivesFilter === "OK"
+                        ? "bg-white text-[#52796f] shadow-xs font-black"
+                        : "text-[#84a98c] hover:text-[#52796f]"
+                    }`}
+                  >
+                    ✔️ OK ({okAdjectivesCount})
+                  </button>
+                </div>
+              </div>
+
+              {/* Text Search Element */}
+              <div className="flex flex-col gap-1.5 flex-1 max-w-sm">
+                <span className="text-[10px] font-bold text-[#84a98c] uppercase tracking-wider">
+                  Search Adjectives (විශේෂණ සොයන්න)
+                </span>
+                <div className="relative">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#84a98c]" />
+                  <input
+                    type="text"
+                    value={adjectivesSearchQuery}
+                    onChange={(e) => setAdjectivesSearchQuery(e.target.value)}
+                    placeholder="සොයන්න (e.g. පැණිරස, 甘い, あまい...)"
+                    className="w-full text-xs rounded-xl border border-[#e9e2d7] pl-10 pr-4 py-2 bg-[#fdfbf7] focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#52796f]/15 focus:border-[#52796f]"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Adjectives Card grid layout */}
+            {filteredAdjectives.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6" id="adjectives-deck-layout">
+                {filteredAdjectives.map((adj) => (
+                  <AdjectiveCardView
+                    key={adj.id}
+                    adjective={adj}
+                    practiceMode={adjectivesPracticePerspective}
+                    status={adjectivesProgress[adj.id] || "UNSTUDIED"}
+                    onStatusChange={(status) => handleUpdateAdjectiveStatus(adj.id, status)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="p-12 text-center bg-white rounded-2xl border border-[#e9e2d7] shadow-sm">
+                <p className="text-sm font-semibold text-slate-400">විශේෂණ පද කිසිවක් හමු නොවීය. Select other search criteria.</p>
+                <p className="text-xs text-slate-300 mt-1">සෙවුම් පද නැවත පරීක්ෂා කර බැලීමට උත්සාහ කරන්න.</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 5: ADVANCED MULTIPLE CHOICE SUPER QUIZ */}
         {activeTab === "quiz" && (
           <QuizView
             kanjiCards={cards}
             verbsList={verbs}
+            adjectivesList={adjectives}
             onBackToLearn={() => setActiveTab("learn")}
           />
         )}

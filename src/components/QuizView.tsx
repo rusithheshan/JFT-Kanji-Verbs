@@ -17,22 +17,26 @@ import {
   Check,
   X,
   VolumeX,
-  Languages
+  Languages,
+  Tags
 } from "lucide-react";
 import { KanjiCard } from "../data/preloadedKanji";
 import { JFTVerb } from "../data/preloadedVerbs";
+import { JFTAdjective } from "../data/preloadedAdjectives";
 
 export type QuizMode =
   | "kanji_reading" // Kanji -> Hiragana
   | "reading_kanji" // Hiragana -> Kanji
   | "sinhala_verb_japanese" // Sinhala Verb -> Kanji (Furigana)
-  | "japanese_verb_sinhala"; // Japanese Verb -> Sinhala
+  | "japanese_verb_sinhala" // Japanese Verb -> Sinhala
+  | "sinhala_adj_japanese" // Sinhala Adjective -> Japanese
+  | "japanese_adj_sinhala"; // Japanese Adjective -> Sinhala
 
 interface QuizQuestion {
   prompt: string;
   correctAnswer: string;
   options: string[];
-  originalItem: KanjiCard | JFTVerb;
+  originalItem: KanjiCard | JFTVerb | JFTAdjective;
 }
 
 interface QuizAnswerHistory {
@@ -40,16 +44,17 @@ interface QuizAnswerHistory {
   correctAnswer: string;
   userChoice: string;
   isCorrect: boolean;
-  originalItem: KanjiCard | JFTVerb;
+  originalItem: KanjiCard | JFTVerb | JFTAdjective;
 }
 
 interface QuizViewProps {
   kanjiCards: KanjiCard[];
   verbsList: JFTVerb[];
+  adjectivesList: JFTAdjective[];
   onBackToLearn?: () => void;
 }
 
-export default function QuizView({ kanjiCards, verbsList, onBackToLearn }: QuizViewProps) {
+export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBackToLearn }: QuizViewProps) {
   // Setup States
   const [quizMode, setQuizMode] = useState<QuizMode>("kanji_reading");
   const [questionCount, setQuestionCount] = useState<number>(10);
@@ -84,11 +89,14 @@ export default function QuizView({ kanjiCards, verbsList, onBackToLearn }: QuizV
 
   // Generate the Quiz Questions
   const startQuiz = () => {
-    let pool: Array<KanjiCard | JFTVerb> = [];
+    let pool: Array<KanjiCard | JFTVerb | JFTAdjective> = [];
     let isVerbsMode = quizMode === "sinhala_verb_japanese" || quizMode === "japanese_verb_sinhala";
+    let isAdjectivesMode = quizMode === "sinhala_adj_japanese" || quizMode === "japanese_adj_sinhala";
 
     if (isVerbsMode) {
       pool = [...verbsList];
+    } else if (isAdjectivesMode) {
+      pool = [...adjectivesList];
     } else {
       pool = [...kanjiCards];
     }
@@ -109,7 +117,7 @@ export default function QuizView({ kanjiCards, verbsList, onBackToLearn }: QuizV
       let correctAnswer = "";
       let allPossibleAnswers: string[] = [];
 
-      if (!isVerbsMode) {
+      if (!isVerbsMode && !isAdjectivesMode) {
         // Kanji mode
         const kanjiCard = item as KanjiCard;
         if (quizMode === "kanji_reading") {
@@ -121,7 +129,7 @@ export default function QuizView({ kanjiCards, verbsList, onBackToLearn }: QuizV
           correctAnswer = kanjiCard.kanji;
           allPossibleAnswers = kanjiCards.map((c) => c.kanji);
         }
-      } else {
+      } else if (isVerbsMode) {
         // Verbs mode
         const jftVerb = item as JFTVerb;
         if (quizMode === "sinhala_verb_japanese") {
@@ -133,6 +141,18 @@ export default function QuizView({ kanjiCards, verbsList, onBackToLearn }: QuizV
           prompt = `${jftVerb.kanji} (${jftVerb.furigana})`;
           correctAnswer = jftVerb.sinhalaMeaning;
           allPossibleAnswers = verbsList.map((v) => v.sinhalaMeaning);
+        }
+      } else {
+        // Adjectives mode
+        const jftAdj = item as JFTAdjective;
+        if (quizMode === "sinhala_adj_japanese") {
+          prompt = jftAdj.sinhalaMeaning;
+          correctAnswer = `${jftAdj.kanji} (${jftAdj.hiragana})`;
+          allPossibleAnswers = adjectivesList.map((a) => `${a.kanji} (${a.hiragana})`);
+        } else {
+          prompt = `${jftAdj.kanji} (${jftAdj.hiragana})`;
+          correctAnswer = jftAdj.sinhalaMeaning;
+          allPossibleAnswers = adjectivesList.map((a) => a.sinhalaMeaning);
         }
       }
 
@@ -166,7 +186,7 @@ export default function QuizView({ kanjiCards, verbsList, onBackToLearn }: QuizV
 
     // Pronounce first question if relevant (Japanese prompt or option in Japanese)
     setTimeout(() => {
-      if (quizMode === "japanese_verb_sinhala" || quizMode === "kanji_reading") {
+      if (quizMode === "japanese_verb_sinhala" || quizMode === "kanji_reading" || quizMode === "japanese_adj_sinhala") {
         speakJapanese(generatedQuestions[0].prompt);
       }
     }, 200);
@@ -189,7 +209,7 @@ export default function QuizView({ kanjiCards, verbsList, onBackToLearn }: QuizV
         return next;
       });
       // Optionally pronounce correct voice if Japanese option was chosen
-      if (quizMode === "sinhala_verb_japanese" || quizMode === "reading_kanji") {
+      if (quizMode === "sinhala_verb_japanese" || quizMode === "reading_kanji" || quizMode === "sinhala_adj_japanese") {
         speakJapanese(question.correctAnswer);
       }
     } else {
@@ -217,7 +237,7 @@ export default function QuizView({ kanjiCards, verbsList, onBackToLearn }: QuizV
 
       // Speak text for next card
       const nextQ = questions[currentIdx + 1];
-      if (quizMode === "japanese_verb_sinhala" || quizMode === "kanji_reading") {
+      if (quizMode === "japanese_verb_sinhala" || quizMode === "kanji_reading" || quizMode === "japanese_adj_sinhala") {
         setTimeout(() => speakJapanese(nextQ.prompt), 100);
       }
     } else {
@@ -262,7 +282,7 @@ export default function QuizView({ kanjiCards, verbsList, onBackToLearn }: QuizV
                 JFT-Basic Super Quiz (ප්‍රශ්නාවලිය)
               </h2>
               <p className="text-sm text-[#84a98c]">
-                Kanji සහ ක්‍රියාපද (Verbs) සඳහා විකල්ප 4කින් යුත් බහුවරණ ප්‍රශ්නාවලිය ජපන් සහ සිංහලෙන් පුහුණු වෙන්න.
+                Kanji, ක්‍රියාපද (Verbs) සහ විශේෂණ පද (Adjectives) සඳහා විකල්ප 4කින් යුත් බහුවරණ ප්‍රශ්නාවලිය ජපන් සහ සිංහලෙන් පුහුණු වෙන්න.
               </p>
             </div>
 
@@ -290,7 +310,7 @@ export default function QuizView({ kanjiCards, verbsList, onBackToLearn }: QuizV
                       Kanji ➔ Hiragana Reading
                     </h4>
                     <p className="text-xs text-[#84a98c] leading-relaxed">
-                      ප්‍රශ්නය ලෙස Kanji පෙන්වන අතර නිවැරදි හිරගනා ශබ්දය තෝරාගත යුතුය.
+                      ප්‍රශ්නය ලෙස Kanji ಪෙන්වන අතර නිවැරදි හිරගනා ශබ්දය තෝරාගත යුතුය.
                     </p>
                   </div>
                   <span className="text-[10px] font-bold text-[#52796f] self-end flex items-center gap-1 group-hover:translate-x-1 transition-transform">
@@ -370,6 +390,54 @@ export default function QuizView({ kanjiCards, verbsList, onBackToLearn }: QuizV
                   </span>
                 </button>
 
+                {/* Mode 5: Sinhala Adjective -> Japanese Adjective */}
+                <button
+                  type="button"
+                  onClick={() => setQuizMode("sinhala_adj_japanese")}
+                  className={`p-5 rounded-[20px] text-left border-2 transition-all duration-200 flex flex-col justify-between h-40 group ${
+                    quizMode === "sinhala_adj_japanese"
+                      ? "border-[#52796f] bg-[#cad2c5]/25"
+                      : "border-[#e9e2d7] bg-white hover:border-[#84a98c]"
+                  }`}
+                >
+                  <div className="space-y-1.5">
+                    <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#cad2c5] text-[#2f3e46]">ADJECTIVE DECK (විශේෂණ)</span>
+                    <h4 className="font-extrabold text-[#354f52] text-sm group-hover:text-[#52796f] transition-colors">
+                      Sinhala ➔ Japanese Adjective
+                    </h4>
+                    <p className="text-xs text-[#84a98c] leading-relaxed">
+                      සිංහල තේරුම ලබා දෙන අතර නිවැරදි ජපන් විශේෂණ පදය (Kanji + Hiragana) තෝරන්න.
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-bold text-[#52796f] self-end flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                    තෝරන්න <ChevronRight className="w-3.5 h-3.5" />
+                  </span>
+                </button>
+
+                {/* Mode 6: Japanese Adjective -> Sinhala */}
+                <button
+                  type="button"
+                  onClick={() => setQuizMode("japanese_adj_sinhala")}
+                  className={`p-5 rounded-[20px] text-left border-2 transition-all duration-200 flex flex-col justify-between h-40 group ${
+                    quizMode === "japanese_adj_sinhala"
+                      ? "border-[#52796f] bg-[#cad2c5]/25"
+                      : "border-[#e9e2d7] bg-white hover:border-[#84a98c]"
+                  }`}
+                >
+                  <div className="space-y-1.5">
+                    <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#cad2c5] text-[#2f3e46]">ADJECTIVE DECK (විශේෂණ)</span>
+                    <h4 className="font-extrabold text-[#354f52] text-sm group-hover:text-[#52796f] transition-colors">
+                      Japanese Adjective ➔ Sinhala Meaning
+                    </h4>
+                    <p className="text-xs text-[#84a98c] leading-relaxed">
+                      ජපන් විශේෂණ පදය (Kanji + Hiragana) දෙන අතර නිවැරදි සිංහල අර්ථය තෝරන්න.
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-bold text-[#52796f] self-end flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                    තෝරන්න <ChevronRight className="w-3.5 h-3.5" />
+                  </span>
+                </button>
+
               </div>
             </div>
 
@@ -380,7 +448,12 @@ export default function QuizView({ kanjiCards, verbsList, onBackToLearn }: QuizV
               </h3>
               <div className="flex gap-2">
                 {[10, 20, 30, 50, 100].map((num) => {
-                  let maxAvailable = quizMode === "sinhala_verb_japanese" || quizMode === "japanese_verb_sinhala" ? verbsList.length : kanjiCards.length;
+                  let maxAvailable = 
+                    quizMode === "sinhala_verb_japanese" || quizMode === "japanese_verb_sinhala" 
+                      ? verbsList.length 
+                      : quizMode === "sinhala_adj_japanese" || quizMode === "japanese_adj_sinhala"
+                      ? adjectivesList.length
+                      : kanjiCards.length;
                   if (num > maxAvailable) return null;
 
                   return (
@@ -482,6 +555,8 @@ export default function QuizView({ kanjiCards, verbsList, onBackToLearn }: QuizV
                   {quizMode === "reading_kanji" && "පහත හිරගනා ශබ්දයට ගැළපෙන කන්ජි වචනය (Select Kanji)"}
                   {quizMode === "sinhala_verb_japanese" && "පහත සිංහල ක්‍රියාපදයේ නිවැරදි ජපන් වචනය තෝරන්න (Select Japanese Verb)"}
                   {quizMode === "japanese_verb_sinhala" && "පහත ජපන් ක්‍රියාපදයට ගැළපෙන සිංහල තේරුම (Select Sinhala Meaning)"}
+                  {quizMode === "sinhala_adj_japanese" && "පහත සිංහල විශේෂණ පදයේ නිවැරදි ජපන් වචනය තෝරන්න (Select Japanese Adjective)"}
+                  {quizMode === "japanese_adj_sinhala" && "පහත ජපන් විශේෂණ පදයට ගැළපෙන සිංහල තේරුම (Select Sinhala Meaning)"}
                 </span>
 
                 <motion.h3 
@@ -496,13 +571,13 @@ export default function QuizView({ kanjiCards, verbsList, onBackToLearn }: QuizV
                 </motion.h3>
 
                 {/* Pronounce voice assistant prompt if relevant */}
-                {(quizMode === "japanese_verb_sinhala" || quizMode === "kanji_reading") && (
+                {(quizMode === "japanese_verb_sinhala" || quizMode === "kanji_reading" || quizMode === "japanese_adj_sinhala") && (
                   <button
                     type="button"
                     onClick={() => speakJapanese(currentQuestion.prompt)}
                     className="mx-auto mt-2 p-2 bg-[#f0ede6] hover:bg-[#e9e2d7]/80 rounded-xl flex items-center gap-1.5 text-xs font-bold text-[#52796f] transition-colors"
                   >
-                    <Volume2 className="w-3.5 h-3.5" /> Pronounce Pronprompt
+                    <Volume2 className="w-3.5 h-3.5" /> Pronounce Prompt
                   </button>
                 )}
               </div>
@@ -561,13 +636,17 @@ export default function QuizView({ kanjiCards, verbsList, onBackToLearn }: QuizV
                   <div className="space-y-1">
                     <span className="text-[10px] font-black uppercase text-[#84a98c] block">CORRECT TRANSLATION INFO</span>
                     <p className="text-xs text-[#52796f] font-bold leading-relaxed">
-                      {("englishMeaning" in currentQuestion.originalItem) ? (
+                      {"englishMeaning" in currentQuestion.originalItem ? (
                         <>
                           <strong>English Meaning:</strong> {(currentQuestion.originalItem as KanjiCard).englishMeaning} | <strong>Sinhala:</strong> {(currentQuestion.originalItem as KanjiCard).sinhalaMeaning}
                         </>
-                      ) : (
+                      ) : "masu" in currentQuestion.originalItem ? (
                         <>
                           <strong>Conjugation:</strong> Masu form is <code>{(currentQuestion.originalItem as JFTVerb).masu}</code> and Dictionary form is <code>{(currentQuestion.originalItem as JFTVerb).dictionary}</code>.
+                        </>
+                      ) : (
+                        <>
+                          <strong>Type:</strong> {(currentQuestion.originalItem as JFTAdjective).type === "i" ? "i-Adjective (ඉ-විශේෂණය)" : "na-Adjective (න-විශේෂණය)"} | <strong>Hiragana:</strong> {(currentQuestion.originalItem as JFTAdjective).hiragana}
                         </>
                       )}
                     </p>
@@ -672,7 +751,7 @@ export default function QuizView({ kanjiCards, verbsList, onBackToLearn }: QuizV
                       <div className="flex items-center gap-2">
                         <span className="font-black text-[#354f52]">Q{hIdx + 1}: {record.questionPrompt}</span>
                         {/* Pronunciation for Japanese */}
-                        {(quizMode === "japanese_verb_sinhala" || quizMode === "kanji_reading") && (
+                        {(quizMode === "japanese_verb_sinhala" || quizMode === "kanji_reading" || quizMode === "japanese_adj_sinhala") && (
                           <button
                             type="button"
                             onClick={() => speakJapanese(record.questionPrompt)}
@@ -694,13 +773,17 @@ export default function QuizView({ kanjiCards, verbsList, onBackToLearn }: QuizV
 
                       {/* Add meanings */}
                       <p className="text-[10px] text-slate-400">
-                        {("englishMeaning" in record.originalItem) ? (
+                        {"englishMeaning" in record.originalItem ? (
                           <>
                             Sinhala: {(record.originalItem as KanjiCard).sinhalaMeaning} | Furigana: {(record.originalItem as KanjiCard).furigana}
                           </>
-                        ) : (
+                        ) : "masu" in record.originalItem ? (
                           <>
                             Masu: {(record.originalItem as JFTVerb).masu} | Dict: {(record.originalItem as JFTVerb).dictionary}
+                          </>
+                        ) : (
+                          <>
+                            Type: {(record.originalItem as JFTAdjective).type === "i" ? "i-Adjective" : "na-Adjective"} | Hiragana: {(record.originalItem as JFTAdjective).hiragana}
                           </>
                         )}
                       </p>
