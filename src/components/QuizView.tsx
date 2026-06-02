@@ -20,12 +20,14 @@ import {
   Languages,
   Tags,
   Ear,
-  Mic
+  Mic,
+  Edit3
 } from "lucide-react";
 import { KanjiCard } from "../data/preloadedKanji";
 import { JFTVerb } from "../data/preloadedVerbs";
 import { JFTAdjective } from "../data/preloadedAdjectives";
 import { PRELOADED_PARAGRAPHS, JFTParagraph, ParagraphToken } from "../data/paragraphTemplates";
+import CheckKanjiDrawingView from "./CheckKanjiDrawingView";
 
 
 export type QuizMode =
@@ -60,27 +62,84 @@ interface QuizViewProps {
 
 export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBackToLearn }: QuizViewProps) {
   // Setup States
-  const [activeQuizSubMode, setActiveQuizSubMode] = useState<"standard" | "paragraph">("standard");
+  const [activeQuizSubMode, setActiveQuizSubMode] = useState<"standard" | "paragraph" | "drawing">("standard");
   const [quizMode, setQuizMode] = useState<QuizMode>("kanji_reading");
   const [questionCount, setQuestionCount] = useState<number>(10);
   const [gameState, setGameState] = useState<"setup" | "playing" | "summary">("setup");
 
   // Paragraph trainer states
+  const [paragraphs, setParagraphs] = useState<JFTParagraph[]>(() => {
+    try {
+      const saved = localStorage.getItem("jft_custom_paragraphs");
+      if (saved) {
+        return [...JSON.parse(saved), ...PRELOADED_PARAGRAPHS];
+      }
+    } catch (e) {}
+    return PRELOADED_PARAGRAPHS;
+  });
   const [activeParagraphIdx, setActiveParagraphIdx] = useState<number>(0);
   const [isListening, setIsListening] = useState<boolean>(false);
   const [spokenText, setSpokenText] = useState<string>("");
   const [isSpeakingResultShown, setIsSpeakingResultShown] = useState<boolean>(false);
   const [selectedWordToken, setSelectedWordToken] = useState<ParagraphToken | null>(null);
   const [recognitionError, setRecognitionError] = useState<string>("");
+  const [isGeneratingParagraph, setIsGeneratingParagraph] = useState<boolean>(false);
+  const [generationError, setGenerationError] = useState<string>("");
 
   const [kanjiOKSet, setKanjiOKSet] = useState<Set<string>>(new Set());
   const [verbsOKSet, setVerbsOKSet] = useState<Set<string>>(new Set());
   const [adjOKSet, setAdjOKSet] = useState<Set<string>>(new Set());
 
+  // Trigger dynamic AI paragraph generation
+  const handleGenerateAIParagraph = async () => {
+    setIsGeneratingParagraph(true);
+    setGenerationError("");
+    setSpokenText("");
+    setIsSpeakingResultShown(false);
+    setSelectedWordToken(null);
+
+    try {
+      const okKanjis = Array.from(kanjiOKSet)
+        .map((id) => kanjiCards.find((c) => c.id === id)?.kanji)
+        .filter(Boolean);
+      const okVerbs = Array.from(verbsOKSet)
+        .map((id) => verbsList.find((v) => v.id === id)?.dictionary)
+        .filter(Boolean);
+      const okAdjectives = Array.from(adjOKSet)
+        .map((id) => adjectivesList.find((a) => a.id === id)?.kanji)
+        .filter(Boolean);
+
+      const response = await fetch("/api/generate-paragraph", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ okKanjis, okVerbs, okAdjectives }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to generate custom paragraph. Please make sure the Gemini API key is configured.");
+      }
+
+      const data: JFTParagraph = await response.json();
+      data.id = `ai_para_${Date.now()}`;
+
+      setParagraphs((prev) => {
+        const filtered = prev.filter((p) => !p.id.startsWith("ai_para_"));
+        const updated = [data, ...filtered];
+        localStorage.setItem("jft_custom_paragraphs", JSON.stringify([data]));
+        return updated;
+      });
+      setActiveParagraphIdx(0);
+    } catch (err: any) {
+      setGenerationError(err.message || "Failed to generate AI paragraph.");
+    } finally {
+      setIsGeneratingParagraph(false);
+    }
+  };
+
   // Load OK checklists reactively
   useEffect(() => {
     try {
-      const kSaved = localStorage.getItem("jft_cards_progress");
+      const kSaved = localStorage.getItem("jft_kanji_progress");
       const vSaved = localStorage.getItem("jft_verbs_progress");
       const aSaved = localStorage.getItem("jft_adjectives_progress");
 
@@ -426,7 +485,7 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
     <div className="w-full space-y-6" id="super-quiz-wrapper">
       {/* Subtab selection header for Quiz views */}
       {gameState === "setup" && (
-        <div className="max-w-3xl mx-auto flex gap-2 p-1.5 bg-[#f0ede6] rounded-2xl border border-[#e9e2d7]">
+        <div className="max-w-3xl mx-auto flex flex-col md:flex-row gap-2 p-1.5 bg-[#f0ede6] rounded-2xl border border-[#e9e2d7]">
           <button
             type="button"
             onClick={() => setActiveQuizSubMode("standard")}
@@ -448,6 +507,17 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
             }`}
           >
             <Mic className="w-4 h-4 text-[#bc6c25]" /> ඡේද සවන්දීම සහ කථනය (Paragraph Speech Arena)
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveQuizSubMode("drawing")}
+            className={`flex-1 py-3 text-center text-xs font-black rounded-xl transition flex items-center justify-center gap-2 cursor-pointer ${
+              activeQuizSubMode === "drawing"
+                ? "bg-white text-[#52796f] shadow-xs"
+                : "text-[#84a98c] hover:text-[#52796f] hover:bg-white/40"
+            }`}
+          >
+            <Edit3 className="w-4 h-4 text-[#bc6c25]" /> කන්ජි ලිවීමේ පරීක්ෂණය (Check Kanji Drawing)
           </button>
         </div>
       )}
@@ -699,7 +769,7 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
           >
             {/* Paragraph selector card banner */}
             <div className="bg-white rounded-[28px] border border-[#e9e2d7] p-6 shadow-sm space-y-4">
-              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-4">
                 <div className="space-y-1">
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black bg-[#ece2d0] text-[#bc6c25]">
                     <Ear className="w-3.5 h-3.5" /> JFT JAPANESE SPEECH & LISTENING ARENA
@@ -708,46 +778,65 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
                     ඡේද සහ කථන පුහුණුව (Reading & Speaking Trainer)
                   </h3>
                   <p className="text-xs text-slate-500 leading-relaxed">
-                    ඔබ උගත් (Mathakai ✔️) කන්ජි, ක්‍රියාපද (Verbs) සහ විශේෂණ පද (Adjectives) අඩංගු ජපන් ඡේද කියවන්න සහ ශබ්ද නඟා පුහුණු වන්න.
+                    ඔබ උගත් (OK ✔️) කන්ජි, ක්‍රියාපද (Verbs) සහ විශේෂණ පද (Adjectives) අඩංගු ජපන් ඡේද කියවන්න සහ ශබ්ද නඟා පුහුණු වන්න.
                   </p>
                 </div>
                 
-                {/* Selector controllers */}
-                <div className="flex items-center gap-1 bg-[#f0ede6] p-1 rounded-xl shrink-0 border border-[#e9e2d7]">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+                  {/* GENERATOR BUTTON */}
                   <button
                     type="button"
-                    onClick={() => {
-                      setActiveParagraphIdx((prev) => (prev > 0 ? prev - 1 : PRELOADED_PARAGRAPHS.length - 1));
-                      setSpokenText("");
-                      setIsSpeakingResultShown(false);
-                      setSelectedWordToken(null);
-                    }}
-                    className="p-1.5 cursor-pointer bg-white text-[#bc6c25] hover:bg-[#fdfbf7] rounded-lg text-xs font-bold transition shadow-xs"
+                    onClick={handleGenerateAIParagraph}
+                    disabled={isGeneratingParagraph}
+                    className="px-4 py-2 bg-[#bc6c25] hover:bg-[#a05c1f] text-white rounded-xl text-xs font-black shadow-xs flex items-center justify-center gap-2 transition disabled:opacity-55 cursor-pointer"
                   >
-                    ◀ Prev
+                    <Sparkles className={`w-4 h-4 ${isGeneratingParagraph ? "animate-spin" : ""}`} />
+                    {isGeneratingParagraph ? "Generating AI Paragraph..." : "✨ AI ඡේදය සාදන්න (Generate OK Paragraph)"}
                   </button>
-                  <span className="font-mono font-black text-xs text-[#354f52] px-2.5">
-                    {activeParagraphIdx + 1} / {PRELOADED_PARAGRAPHS.length}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveParagraphIdx((prev) => (prev < PRELOADED_PARAGRAPHS.length - 1 ? prev + 1 : 0));
-                      setSpokenText("");
-                      setIsSpeakingResultShown(false);
-                      setSelectedWordToken(null);
-                    }}
-                    className="p-1.5 cursor-pointer bg-white text-[#bc6c25] hover:bg-[#fdfbf7] rounded-lg text-xs font-bold transition shadow-xs"
-                  >
-                    Next ▶
-                  </button>
+
+                  {/* Selector controllers */}
+                  <div className="flex items-center gap-1 bg-[#f0ede6] p-1 rounded-xl border border-[#e9e2d7] justify-between">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveParagraphIdx((prev) => (prev > 0 ? prev - 1 : paragraphs.length - 1));
+                        setSpokenText("");
+                        setIsSpeakingResultShown(false);
+                        setSelectedWordToken(null);
+                      }}
+                      className="p-1.5 cursor-pointer bg-white text-[#bc6c25] hover:bg-[#fdfbf7] rounded-lg text-xs font-bold transition shadow-xs"
+                    >
+                      ◀ Prev
+                    </button>
+                    <span className="font-mono font-black text-xs text-[#354f52] px-2.5">
+                      {paragraphs.length > 0 ? activeParagraphIdx + 1 : 0} / {paragraphs.length}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveParagraphIdx((prev) => (prev < paragraphs.length - 1 ? prev + 1 : 0));
+                        setSpokenText("");
+                        setIsSpeakingResultShown(false);
+                        setSelectedWordToken(null);
+                      }}
+                      className="p-1.5 cursor-pointer bg-white text-[#bc6c25] hover:bg-[#fdfbf7] rounded-lg text-xs font-bold transition shadow-xs"
+                    >
+                      Next ▶
+                    </button>
+                  </div>
                 </div>
               </div>
+
+              {generationError && (
+                <div className="p-3.5 bg-red-50 text-red-700 text-xs font-bold rounded-xl border border-red-200 mt-2">
+                  ⚠️ {generationError}
+                </div>
+              )}
             </div>
 
             {/* Paragraph display container */}
-            {(() => {
-              const para = PRELOADED_PARAGRAPHS[activeParagraphIdx];
+            {paragraphs.length > 0 && (() => {
+              const para = paragraphs[activeParagraphIdx];
               const matchedCount = para.tokens.filter(t => isListening || spokenText ? matchToken(t, spokenText) : false).length;
               const matchingPercentage = para.tokens.length > 0 ? Math.round((matchedCount / para.tokens.length) * 100) : 0;
 
@@ -782,10 +871,35 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
                         const learned = isTokenLearned(token);
                         const correctMatched = isListening || spokenText ? matchToken(token, spokenText) : false;
 
-                        // Rule 1: "Kanjiwala mathakai kiyala select karapu ewala kanjiya witharak pharagraph ekata danna."
-                        // Rule 2: "Verbwalai adjectiveswaai daddi furiganath aniwaryen kanjiyata udin danna."
-                        const needsRuby = token.type === "verb" || token.type === "adjective";
-                        const displayKanjiOnly = token.type === "kanji" && learned;
+                        const isKanjiChar = (char: string) => /[\u4e00-\u9faf]/.test(char);
+
+                        let displayedText = token.text;
+                        if (token.type === "kanji") {
+                          const matchCard = kanjiCards.find(c => c.kanji === token.kanji || c.kanji === token.text);
+                          const isOk = matchCard ? kanjiOKSet.has(matchCard.id) : false;
+                          if (isOk) {
+                            displayedText = token.kanji || token.text;
+                          } else {
+                            displayedText = token.furigana || (token as any).hiragana || token.text;
+                          }
+                        } else if (token.type === "verb" || token.type === "adjective") {
+                          if (learned) {
+                            const wordToTest = token.kanji || token.text || "";
+                            const kanjisInWord = [...wordToTest].filter(isKanjiChar);
+                            const allKanjisLearned = kanjisInWord.length > 0 && kanjisInWord.every(char => {
+                              const card = kanjiCards.find(c => c.kanji.includes(char));
+                              return card ? kanjiOKSet.has(card.id) : false;
+                            });
+
+                            if (allKanjisLearned) {
+                              displayedText = token.kanji || token.text;
+                            } else {
+                              displayedText = (token as any).hiragana || token.furigana || token.text;
+                            }
+                          } else {
+                            displayedText = (token as any).hiragana || token.furigana || token.text;
+                          }
+                        }
 
                         let tokenStyle = "text-[#2f3e46] hover:text-[#bc6c25]";
                         if (correctMatched) {
@@ -808,20 +922,9 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
                             className={`cursor-pointer transition duration-150 select-none ${tokenStyle}`}
                             title={`ක්ලික් කරන්න: ${token.englishMeaning}`}
                           >
-                            {needsRuby && token.kanji && token.furigana ? (
-                              <ruby className="ruby-position-over font-semibold text-xl md:text-2xl tracking-normal">
-                                {token.kanji}
-                                <rt className="text-[10px] md:text-xs font-mono text-amber-800 font-extrabold pb-0.5">{token.furigana}</rt>
-                              </ruby>
-                            ) : displayKanjiOnly && token.kanji ? (
-                              <span className="font-extrabold text-xl md:text-2xl text-[#2f3e46] border-b-2 border-emerald-500/40">
-                                {token.kanji}
-                              </span>
-                            ) : (
-                              <span className="font-bold text-xl md:text-2xl">
-                                {token.text}
-                              </span>
-                            )}
+                            <span className="font-extrabold text-xl md:text-2xl">
+                              {displayedText}
+                            </span>
                           </div>
                         );
                       })}
@@ -1006,6 +1109,14 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
               );
             })()}
           </motion.div>
+        )}
+
+        {/* --- 1C. KANJI DRAWING TEST WORKSPACE --- */}
+        {gameState === "setup" && activeQuizSubMode === "drawing" && (
+          <CheckKanjiDrawingView
+            kanjiCards={kanjiCards}
+            onBackToSetup={() => setActiveQuizSubMode("standard")}
+          />
         )}
 
         {/* --- 2. PLAYING / ACTIVE QUIZ SCREEN --- */}

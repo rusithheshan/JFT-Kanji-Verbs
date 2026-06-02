@@ -28,10 +28,14 @@ import VerbCardView from "./components/VerbCardView";
 import { PRELOADED_ADJECTIVES, JFTAdjective } from "./data/preloadedAdjectives";
 import AdjectiveCardView from "./components/AdjectiveCardView";
 import QuizView from "./components/QuizView";
+import { PRELOADED_GRAMMAR } from "./data/preloadedGrammar";
+import { JFTGrammar } from "./types";
+import GrammarCardView from "./components/GrammarCardView";
+import RealTimeTranslatorView from "./components/RealTimeTranslatorView";
 
 export default function App() {
   // Navigation tabs
-  const [activeTab, setActiveTab] = useState<"learn" | "test" | "verbs" | "adjectives" | "quiz">("learn");
+  const [activeTab, setActiveTab] = useState<"learn" | "test" | "verbs" | "adjectives" | "grammar" | "quiz" | "translator">("learn");
 
   // Main Kanji Deck State (Preloaded base cards + any PDF parsed results + custom AI generated ones)
   const [cards, setCards] = useState<KanjiCard[]>(() => {
@@ -116,6 +120,22 @@ export default function App() {
   const [activeAdjectiveTypeFilter, setActiveAdjectiveTypeFilter] = useState<"ALL" | "I" | "NA">("ALL");
   const [adjectivesPracticePerspective, setAdjectivesPracticePerspective] = useState<"sinhala" | "japanese">("japanese");
 
+  // JFT Grammar State
+  const [grammarList] = useState<JFTGrammar[]>(PRELOADED_GRAMMAR);
+  const [grammarProgress, setGrammarProgress] = useState<UserProgress>(() => {
+    const saved = localStorage.getItem("jft_grammar_progress");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return {};
+  });
+
+  // Grammar search, filter states
+  const [grammarSearchQuery, setGrammarSearchQuery] = useState("");
+  const [activeGrammarFilter, setActiveGrammarFilter] = useState<"ALL" | "NOT_YET" | "OK">("ALL");
+
   // Persist State Changes
   useEffect(() => {
     localStorage.setItem("jft_kanji_cards", JSON.stringify(cards));
@@ -132,6 +152,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("jft_adjectives_progress", JSON.stringify(adjectivesProgress));
   }, [adjectivesProgress]);
+
+  useEffect(() => {
+    localStorage.setItem("jft_grammar_progress", JSON.stringify(grammarProgress));
+  }, [grammarProgress]);
 
   // Set up testing/shuffled deck whenever we enter knowledge check mode or cards list updates
   useEffect(() => {
@@ -176,6 +200,14 @@ export default function App() {
     }));
   };
 
+  // Update a grammar progress status
+  const handleUpdateGrammarStatus = (grammarId: string, status: LearningStatus) => {
+    setGrammarProgress((prev) => ({
+      ...prev,
+      [grammarId]: status,
+    }));
+  };
+
   // Quick reset metrics
   const handleResetProgress = () => {
     if (window.confirm("සැබවින්ම දත්ත මකාදමා නැවත මුල සිට ආරම්භ කිරීමට අවශ්‍ය ද? Reset learning progress data?")) {
@@ -196,6 +228,14 @@ export default function App() {
     if (window.confirm("සැබවින්ම විශේෂණ පද ප්‍රගති දත්ත මකාදමා නැවත මුල සිට ආරම්භ කිරීමට අවශ්‍ය ද? Reset adjectives learning progress data?")) {
       setAdjectivesProgress({});
       localStorage.removeItem("jft_adjectives_progress");
+    }
+  };
+
+  // Reset grammar learning progress
+  const handleResetGrammarProgress = () => {
+    if (window.confirm("සැබවින්ම ව්‍යාකරණ ප්‍රගති දත්ත මකාදමා නැවත මුල සිට ආරම්භ කිරීමට අවශ්‍ය ද? Reset grammar learning progress data?")) {
+      setGrammarProgress({});
+      localStorage.removeItem("jft_grammar_progress");
     }
   };
 
@@ -385,6 +425,31 @@ export default function App() {
     return matchesStatus && matchesType && matchesSearch;
   });
 
+  // Grammar scores/ratios and filtering
+  const okGrammarCount = grammarList.reduce((sum, g) => (grammarProgress[g.id] === "OK" ? sum + 1 : sum), 0);
+  const notYetGrammarCount = grammarList.reduce((sum, g) => (grammarProgress[g.id] === "NOT_YET" ? sum + 1 : sum), 0);
+  const percentGrammarComplete = grammarList.length > 0 ? Math.round((okGrammarCount / grammarList.length) * 100) : 0;
+
+  const filteredGrammars = grammarList.filter((grammar) => {
+    const cardStatus = grammarProgress[grammar.id] || "UNSTUDIED";
+    const matchesFilter =
+      activeGrammarFilter === "ALL" ||
+      (activeGrammarFilter === "NOT_YET" && cardStatus === "NOT_YET") ||
+      (activeGrammarFilter === "OK" && cardStatus === "OK");
+
+    const query = grammarSearchQuery.toLowerCase().trim();
+    const matchesSearch =
+      !query ||
+      grammar.index.toLowerCase().includes(query) ||
+      grammar.title.toLowerCase().includes(query) ||
+      grammar.romaji.toLowerCase().includes(query) ||
+      grammar.pattern.toLowerCase().includes(query) ||
+      grammar.sinhalaExplanation.toLowerCase().includes(query) ||
+      grammar.englishExplanation.toLowerCase().includes(query);
+
+    return matchesFilter && matchesSearch;
+  });
+
   return (
     <div className="min-h-screen flex flex-col bg-[#fdfbf7] text-[#2f3e46]" id="main-jft-container">
       {/* Dynamic Header */}
@@ -396,7 +461,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-xl font-bold font-display tracking-tight text-[#354f52]">
-                JFT-Basic Kanji Learner
+                JFT & N4 Learning Helper
               </h1>
               <p className="text-xs text-[#84a98c] font-medium">
                 Sinhala & English Translations with Real-time Assessor
@@ -409,7 +474,7 @@ export default function App() {
             <div className="flex flex-col">
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-bold text-[#84a98c] tracking-wider uppercase">
-                  Progress Mathakai
+                  Progress Score
                 </span>
                 <span className="text-xs font-bold text-[#52796f]">{percentComplete}%</span>
               </div>
@@ -422,10 +487,10 @@ export default function App() {
             </div>
             <div className="border-l border-[#e9e2d7] pl-3.5 h-8 flex items-center gap-2">
               <span className="text-sm font-semibold text-[#354f52]">
-                ✔️ {okCount} <span className="text-xs text-[#84a98c]">Mathakai</span>
+                ✔️ {okCount} <span className="text-xs text-[#84a98c]">OK</span>
               </span>
               <span className="text-sm font-semibold text-[#354f52] border-l border-[#e9e2d7] pl-2">
-                ❌ {notYetCount} <span className="text-xs text-[#84a98c]">Thama</span>
+                ❌ {notYetCount} <span className="text-xs text-[#84a98c]">NOT YET</span>
               </span>
             </div>
           </div>
@@ -434,10 +499,10 @@ export default function App() {
         {/* Global tab Switcher row */}
         <div className="bg-[#fdbbf7]/0 border-t border-[#e9e2d7]">
           <div className="max-w-7xl mx-auto px-4 py-3 flex justify-start">
-            <div className="flex gap-1 bg-[#f0ede6] p-1 rounded-full">
+            <div className="flex gap-1 bg-[#f0ede6] p-1 rounded-full overflow-x-auto scrollbar-none">
               <button
                 onClick={() => setActiveTab("learn")}
-                className={`px-6 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 ${
+                className={`px-6 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${
                   activeTab === "learn"
                     ? "bg-white text-[#52796f] shadow-xs font-bold"
                     : "text-[#84a98c] hover:bg-white/50"
@@ -447,7 +512,7 @@ export default function App() {
               </button>
               <button
                 onClick={() => setActiveTab("test")}
-                className={`px-6 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 ${
+                className={`px-6 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${
                   activeTab === "test"
                     ? "bg-white text-[#52796f] shadow-xs font-bold"
                     : "text-[#84a98c] hover:bg-white/50"
@@ -457,7 +522,7 @@ export default function App() {
               </button>
               <button
                 onClick={() => setActiveTab("verbs")}
-                className={`px-6 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 ${
+                className={`px-6 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${
                   activeTab === "verbs"
                     ? "bg-white text-[#52796f] shadow-xs font-bold"
                     : "text-[#84a98c] hover:bg-white/50"
@@ -467,7 +532,7 @@ export default function App() {
               </button>
               <button
                 onClick={() => setActiveTab("adjectives")}
-                className={`px-6 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 ${
+                className={`px-6 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${
                   activeTab === "adjectives"
                     ? "bg-white text-[#52796f] shadow-xs font-bold"
                     : "text-[#84a98c] hover:bg-white/50"
@@ -476,8 +541,18 @@ export default function App() {
                 <Languages className="w-4 h-4" /> Learn Adjectives (විශේෂණ)
               </button>
               <button
+                onClick={() => setActiveTab("grammar")}
+                className={`px-6 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${
+                  activeTab === "grammar"
+                    ? "bg-white text-[#52796f] shadow-xs font-bold"
+                    : "text-[#84a98c] hover:bg-white/50"
+                }`}
+              >
+                <BookOpen className="w-4 h-4 font-black text-[#bc6c25]" /> Learn Grammar (ව්‍යාකරණ)
+              </button>
+              <button
                 onClick={() => setActiveTab("quiz")}
-                className={`px-6 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 ${
+                className={`px-6 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${
                   activeTab === "quiz"
                     ? "bg-white text-[#52796f] shadow-xs font-bold"
                     : "text-[#84a98c] hover:bg-white/50"
@@ -488,6 +563,41 @@ export default function App() {
             </div>
           </div>
         </div>
+
+        {/* Real-time Translator Header Banner Action Bar */}
+        <div className="max-w-7xl mx-auto px-4 pt-1 pb-3">
+          <button
+            onClick={() => setActiveTab("translator")}
+            className={`w-full py-4 px-6 rounded-[22px] flex flex-col sm:flex-row sm:items-center justify-between text-left transition-all duration-300 border-2 select-none gap-4 cursor-pointer ${
+              activeTab === "translator"
+                ? "bg-teal-700 text-white border-teal-700 shadow-sm scale-102"
+                : "bg-teal-50/15 text-teal-800 border-teal-100 hover:bg-teal-50/40 hover:border-teal-300"
+            }`}
+          >
+            <div className="flex items-center gap-3.5">
+              <div className={`p-2.5 rounded-xl shrink-0 ${activeTab === "translator" ? "bg-white/15 text-white" : "bg-teal-100/50 text-teal-800"}`}>
+                <Languages className="w-5 h-5" />
+              </div>
+              <div className="space-y-0.5">
+                <span className={`text-[9px] font-black uppercase tracking-widest block ${activeTab === "translator" ? "text-teal-100" : "text-teal-700"}`}>
+                  Real-Time AI Camera, Photo & Text Translator • සජීවී AI කැමරා පරිවර්තකය
+                </span>
+                <span className="text-sm font-black block">
+                  ස්මාර්ට් පරිවර්තක මෙවලම (Smart Translate & Particle Anatomy Analyzer)
+                </span>
+              </div>
+            </div>
+            <div className={`inline-flex items-center gap-1.5 text-xs font-black px-4.5 py-2.5 rounded-xl border shrink-0 transition-all ${
+              activeTab === "translator" 
+                ? "bg-white text-teal-800 border-white font-extrabold shadow-2xs" 
+                : "bg-teal-750 text-white border-teal-700 hover:bg-teal-800"
+            }`}
+            style={activeTab !== "translator" ? { backgroundColor: "#0f766e" } : undefined}
+            >
+              {activeTab === "translator" ? "✔️ දැනට ක්‍රියාකාරීයි (ACTIVE NOW)" : "📷 පරිවර්තකයට පිවිසෙන්න (OPEN TRANSLATOR)"}
+            </div>
+          </button>
+        </div>
       </header>
 
       {/* Main Container Workspace */}
@@ -497,141 +607,32 @@ export default function App() {
         {activeTab === "learn" && (
           <div className="space-y-6">
             
-            {/* Quick action grid: PDF Uploader + Custom Individual AI card adder */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-              
-              {/* Box 1: AI Custom Kanji Word Adder */}
-              <div className="lg:col-span-4 bg-white p-5 rounded-[24px] border border-[#e9e2d7] shadow-sm flex flex-col justify-between">
-                <div>
-                  <h3 className="font-display font-bold text-sm text-[#354f52] flex items-center gap-2">
-                    <Plus className="w-4 h-4 text-[#52796f]" /> Card Creator (අලුත් කාඩ්)
-                  </h3>
-                  <p className="text-xs text-[#84a98c] mt-1 mb-4 leading-relaxed">
-                    Enter any Japanese characters or individual Kanji word. Gemini AI will write translations, onyomi readings, kunyomi readings and bind a graphic card!
-                  </p>
-                </div>
-
-                <form onSubmit={handleAddCustomKanji} className="space-y-3">
-                  <div className="relative">
-                    <input
-                      type="text"
-                      maxLength={10}
-                      disabled={isGeneratingCustomCard}
-                      value={customKanjiInput}
-                      onChange={(e) => setCustomKanjiInput(e.target.value)}
-                      placeholder="e.g. 犬, 傘, 電車"
-                      className="w-full text-sm rounded-xl border border-[#e9e2d7] px-3 py-2.5 focus:outline-hidden focus:ring-2 focus:ring-[#52796f]/15 focus:border-[#52796f] font-sans bg-[#fdfbf7]"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={isGeneratingCustomCard || !customKanjiInput.trim()}
-                    className="w-full py-2.5 bg-[#52796f] hover:bg-[#354f52] disabled:bg-[#f0ede6] disabled:text-[#84a98c] text-white rounded-xl text-xs font-bold transition-all duration-200 inline-flex items-center justify-center gap-2 shadow-sm"
-                  >
-                    {isGeneratingCustomCard ? (
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin"></span>
-                        AI Generating...
-                      </span>
-                    ) : (
-                      <>
-                        <Sparkles className="w-3.5 h-3.5" /> Generate Kanji detail
-                      </>
-                    )}
-                  </button>
-                </form>
+            {/* Workspace Config Reset Options */}
+            <div className="max-w-xl mx-auto bg-[#ece2d0]/25 border border-[#e9e2d7] p-6 rounded-[24px] shadow-sm flex flex-col justify-between">
+              <div>
+                <h3 className="font-display font-bold text-sm text-[#bc6c25] flex items-center gap-1.5 justify-center">
+                  <Info className="w-4 h-4" /> Info & Workspace Reset
+                </h3>
+                <p className="text-xs text-[#2f3e46] mt-2 text-center leading-relaxed font-semibold">
+                  Loaded {cards.length} total Kanji cards. Marked: {okCount} learned checks. You can reset learning matrices or reload default definitions at any time.
+                </p>
               </div>
 
-              {/* Box 2: PDF drag upload tool */}
-              <div className="lg:col-span-5 bg-white p-5 rounded-[24px] border border-[#e9e2d7] shadow-sm flex flex-col justify-between">
-                <div>
-                  <h3 className="font-display font-bold text-sm text-[#354f52] flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-[#52796f]" /> JFT Study PDF Uploader
-                  </h3>
-                  <p className="text-xs text-[#84a98c] mt-1 mb-3 leading-relaxed">
-                    Upload your "JFT Kanji.pdf" study notes. Gemini AI reads, extracts, and populates up to 450 Kanji cards with full meanings automatically!
-                  </p>
-                </div>
-
-                <div className="relative flex flex-col justify-center">
-                  <input
-                    type="file"
-                    accept="application/pdf"
-                    id="pdf-study-upload"
-                    disabled={isUploadingPdf}
-                    onChange={handlePdfUpload}
-                    className="hidden"
-                  />
-                  <label
-                    htmlFor="pdf-study-upload"
-                    className={`flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all duration-200 ${
-                      isUploadingPdf
-                        ? "bg-[#fdfbf7] border-[#52796f]"
-                        : "border-[#cad2c5] hover:border-[#84a98c] hover:bg-[#f0ede6]/50"
-                    }`}
-                  >
-                    {isUploadingPdf ? (
-                      <div className="space-y-2 py-1">
-                        <span className="inline-block w-6 h-6 border-2 border-[#52796f]/20 border-t-[#52796f] rounded-full animate-spin"></span>
-                        <p className="text-[11px] font-bold text-[#52796f]">Gemini reading and translating your PDF...</p>
-                        <p className="text-[9px] text-[#84a98c]">Generating Sinhala and English interpretations...</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-1">
-                        <Upload className="w-7 h-7 mx-auto text-[#84a98c]" />
-                        <p className="text-[11px] font-bold text-[#354f52]">Choose PDF Document or Drag here</p>
-                        <p className="text-[9px] text-[#84a98c]">JFT Kanji.pdf format support</p>
-                      </div>
-                    )}
-                  </label>
-                </div>
-              </div>
-
-              {/* Box 3: Workspace Config Reset Options */}
-              <div className="lg:col-span-3 bg-[#ece2d0]/25 border border-[#e9e2d7] p-5 rounded-[24px] shadow-sm flex flex-col justify-between">
-                <div>
-                  <h3 className="font-display font-bold text-sm text-[#bc6c25] flex items-center gap-1.5">
-                    <Info className="w-4 h-4" /> Info & Workspace Reset
-                  </h3>
-                  <p className="text-xs text-[#2f3e46] mt-1 leading-relaxed">
-                    Loaded {cards.length} total Kanji cards. Marked: {okCount} learned checks. You can reset learning matrices or reload default definitions at any time.
-                  </p>
-                </div>
-
-                <div className="space-y-2 mt-4">
-                  <button
-                    onClick={handleResetProgress}
-                    className="w-full py-2 bg-white border border-[#bc6c25] hover:bg-[#fdfbf7] rounded-xl text-[11px] font-bold text-[#bc6c25] transition"
-                  >
-                    🧹 Clear Progress Tracking Data
-                  </button>
-                  <button
-                    onClick={handleResetAllToFactory}
-                    className="w-full py-2 bg-white border border-[#84a98c] hover:bg-[#fdfbf7] rounded-xl text-[11px] font-bold text-[#52796f] transition"
-                  >
-                    🔄 Reset Deck list to Factory Base
-                  </button>
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-5">
+                <button
+                  onClick={handleResetProgress}
+                  className="w-full py-2.5 bg-white border border-[#bc6c25] hover:bg-[#fdfbf7] rounded-xl text-xs font-bold text-[#bc6c25] transition cursor-pointer"
+                >
+                  🧹 Clear Progress Tracking Data
+                </button>
+                <button
+                  onClick={handleResetAllToFactory}
+                  className="w-full py-2.5 bg-white border border-[#84a98c] hover:bg-[#fdfbf7] rounded-xl text-xs font-bold text-[#52796f] transition cursor-pointer"
+                >
+                  🔄 Reset Deck list to Factory Base
+                </button>
               </div>
             </div>
-
-            {/* Error and Success Notices strip */}
-            {(pdfParsingError || pdfSuccessMessage) && (
-              <div className="animate-fade-in">
-                {pdfParsingError && (
-                  <div className="p-4 rounded-xl bg-[#ece2d0] border border-[#bc6c25] text-[#bc6c25] text-xs font-semibold leading-relaxed flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 shrink-0 text-[#bc6c25]" />
-                    <span>{pdfParsingError}</span>
-                  </div>
-                )}
-                {pdfSuccessMessage && (
-                  <div className="p-4 rounded-xl bg-[#cad2c5]/30 border border-[#52796f]/40 text-[#2f3e46] text-xs font-semibold leading-relaxed flex items-center gap-2">
-                    <ThumbsUp className="w-4 h-4 shrink-0 text-[#52796f]" />
-                    <span>{pdfSuccessMessage}</span>
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* Filtering and Search controls Bar */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-white rounded-[24px] border border-[#e9e2d7] shadow-sm">
@@ -690,21 +691,13 @@ export default function App() {
             {filteredCards.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6" id="kanji-deck-layout">
                 {filteredCards.map((card, index) => (
-                  <div
+                  <KanjiCardView
                     key={card.id}
-                    onClick={() => {
-                      // Find direct match index in cards array
-                      const trueIdx = cards.findIndex((c) => c.id === card.id);
-                      setFocusedCardIndex(trueIdx);
-                    }}
-                  >
-                    <KanjiCardView
-                      card={card}
-                      status={progress[card.id] || "UNSTUDIED"}
-                      mode="learn"
-                      onStatusChange={(status) => handleUpdateStatus(card.id, status)}
-                    />
-                  </div>
+                    card={card}
+                    status={progress[card.id] || "UNSTUDIED"}
+                    mode="learn"
+                    onStatusChange={(status) => handleUpdateStatus(card.id, status)}
+                  />
                 ))}
               </div>
             ) : (
@@ -899,11 +892,11 @@ export default function App() {
 
                   <div className="flex gap-4 shrink-0 bg-[#fdfbf7] border border-[#e9e2d7] rounded-xl p-2.5 px-4">
                     <div className="text-center">
-                      <span className="text-[10px] font-bold text-[#84a98c] block">මතකයි</span>
+                      <span className="text-[10px] font-bold text-[#84a98c] block">OK</span>
                       <span className="text-sm font-extrabold text-[#52796f]">✔️ {okVerbsCount}</span>
                     </div>
                     <div className="border-l border-[#e9e2d7] pl-4 text-center">
-                      <span className="text-[10px] font-bold text-[#84a98c] block">තවම ඕනේ</span>
+                      <span className="text-[10px] font-bold text-[#84a98c] block">NOT YET</span>
                       <span className="text-sm font-extrabold text-[#bc6c25]">❌ {notYetVerbsCount}</span>
                     </div>
                     <div className="border-l border-[#e9e2d7] pl-4 text-center">
@@ -1089,11 +1082,11 @@ export default function App() {
 
                   <div className="flex gap-4 shrink-0 bg-[#fdfbf7] border border-[#e9e2d7] rounded-xl p-2.5 px-4">
                     <div className="text-center">
-                      <span className="text-[10px] font-bold text-[#84a98c] block">මතකයි</span>
+                      <span className="text-[10px] font-bold text-[#84a98c] block">OK</span>
                       <span className="text-sm font-extrabold text-[#52796f]">✔️ {okAdjectivesCount}</span>
                     </div>
                     <div className="border-l border-[#e9e2d7] pl-4 text-center">
-                      <span className="text-[10px] font-bold text-[#84a98c] block">තවම ඕනේ</span>
+                      <span className="text-[10px] font-bold text-[#84a98c] block">NOT YET</span>
                       <span className="text-sm font-extrabold text-[#bc6c25]">❌ {notYetAdjectivesCount}</span>
                     </div>
                     <div className="border-l border-[#e9e2d7] pl-4 text-center">
@@ -1287,6 +1280,173 @@ export default function App() {
           </div>
         )}
 
+        {/* TAB 4: STUDY GRAMMAR PATTERNS */}
+        {activeTab === "grammar" && (
+          <div className="space-y-6" id="jft-grammar-section">
+            
+            {/* Grammar Stats Metrics Row */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+              
+              {/* Box 1: Grammar Study Stats Card */}
+              <div className="lg:col-span-8 bg-white border border-[#e9e2d7] p-6 rounded-[28px] shadow-sm flex flex-col justify-between" id="grammar-stats-card">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black bg-[#cad2c5]/40 text-[#52796f]">
+                      🎯 JFT-BASIC A2 GRAMMAR MASTERY
+                    </span>
+                    <h3 className="text-lg font-black text-[#354f52]">
+                      ව්‍යාකරණ රටා අධ්‍යයන ප්‍රගතිය (Grammar Status Tracker)
+                    </h3>
+                    <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                      JFT N4 විභාගයට අදාළව නිතර අසන ප්‍රධානතම ව්‍යාකරණ රටා 20කට වඩා (Lessons 01-11, 64-65, 67-75) මෙහි අඩංගු වේ.
+                    </p>
+                  </div>
+                  
+                  {/* Circular Percent tracker count */}
+                  <div className="bg-[#fcfaf2] border border-[#e9e2d7] p-4 rounded-2xl text-center shrink-0 min-w-[120px]">
+                    <span className="text-[9px] font-black text-slate-400 block tracking-wider uppercase">MASTERY</span>
+                    <span className="text-2xl font-black text-[#52796f] leading-none block my-1">
+                      {percentGrammarComplete}%
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-bold">Completed OK</span>
+                  </div>
+                </div>
+
+                {/* Progress bar and metrics indicators */}
+                <div className="space-y-3 mt-6 border-t border-[#f0ede6] pt-4">
+                  <div className="w-full bg-[#f0ede6] rounded-full h-3 overflow-hidden">
+                    <div
+                      className="bg-[#52796f] h-full rounded-full transition-all duration-500"
+                      style={{ width: `${percentGrammarComplete}%` }}
+                    ></div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 text-center pt-1 text-xs">
+                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-xl">
+                      <span className="text-[9px] font-bold text-[#84a98c] block uppercase">OK</span>
+                      <span className="text-sm font-extrabold text-[#52796f]">✔️ {okGrammarCount}</span>
+                    </div>
+                    <div className="p-2 bg-[#ece2d0]/30 border border-[#ece2d0]/50 rounded-xl">
+                      <span className="text-[9px] font-bold text-[#bc6c25] block uppercase">NOT YET</span>
+                      <span className="text-sm font-extrabold text-[#bc6c25]">❌ {notYetGrammarCount}</span>
+                    </div>
+                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-xl">
+                      <span className="text-[9px] font-bold text-[#84a98c] block uppercase">TOTAL CONTEXT (මුළු එකතුව)</span>
+                      <span className="text-sm font-extrabold text-[#354f52]">📋 {grammarList.length}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Box 2: Actions & Configuration Panel */}
+              <div className="lg:col-span-4 bg-[#ece2d0]/25 border border-[#e9e2d7] p-6 rounded-[28px] shadow-sm flex flex-col justify-between" id="grammar-config-card">
+                <div>
+                  <h4 className="font-display font-bold text-xs text-[#bc6c25] uppercase tracking-widest flex items-center gap-1.5">
+                    ⚙️ Settings & Reference
+                  </h4>
+                  <p className="text-xs text-[#2f3e46] mt-1.5 leading-relaxed font-semibold">
+                    සෑම ව්‍යාකරණ කාඩ්පතක්ම ක්ලික් කර (Click/Tap) හරහා එහි අනෙක් පැත්ත හරවා ආදර්ශ වාක්‍ය, සිංහල තේරුම සහ භාවිතය අධ්‍යයනය කරන්න.
+                  </p>
+                </div>
+
+                <div className="space-y-2 mt-4">
+                  <button
+                    onClick={handleResetGrammarProgress}
+                    className="w-full py-2.5 bg-white border border-[#bc6c25] hover:bg-[#fdfbf7] rounded-xl text-xs font-bold text-[#bc6c25] transition shadow-xs cursor-pointer"
+                  >
+                    🧹 Clear Grammar Progress Data
+                  </button>
+                  <div className="p-3 bg-white border border-[#e9e2d7] rounded-xl text-[10px] text-slate-500 font-semibold leading-relaxed">
+                    💡 Click the speaker icon inside any example sentence to listen to accurate voice pronunciation.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Practice Search Filter controls */}
+            <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-4 p-5 bg-white rounded-[24px] border border-[#e9e2d7] shadow-sm" id="grammar-controls-row">
+              
+              {/* Status Filter Toggle */}
+              <div className="flex flex-col gap-1.5 shrink-0">
+                <span className="text-[10px] font-bold text-[#84a98c] uppercase tracking-wider">
+                  Status Filtering (පෙරහන්)
+                </span>
+                <div className="flex items-center gap-1 bg-[#f0ede6] p-1 rounded-xl border border-[#e9e2d7] self-start">
+                  <button
+                    type="button"
+                    onClick={() => setActiveGrammarFilter("ALL")}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 ${
+                      activeGrammarFilter === "ALL"
+                        ? "bg-white text-[#52796f] shadow-xs font-black"
+                        : "text-[#84a98c] hover:text-[#52796f]"
+                    }`}
+                  >
+                    📖 All Lessons ({grammarList.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveGrammarFilter("NOT_YET")}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 ${
+                      activeGrammarFilter === "NOT_YET"
+                        ? "bg-white text-[#bc6c25] shadow-xs font-black"
+                        : "text-[#84a98c] hover:text-[#bc6c25]"
+                    }`}
+                  >
+                    ❌ Not Yet ({notYetGrammarCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveGrammarFilter("OK")}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 ${
+                      activeGrammarFilter === "OK"
+                        ? "bg-white text-[#52796f] shadow-xs font-black"
+                        : "text-[#84a98c] hover:text-[#52796f]"
+                    }`}
+                  >
+                    ✔️ OK ({okGrammarCount})
+                  </button>
+                </div>
+              </div>
+
+              {/* Text Search Element */}
+              <div className="flex flex-col gap-1.5 flex-1 max-w-sm">
+                <span className="text-[10px] font-bold text-[#84a98c] uppercase tracking-wider">
+                  Search Grammar (ව්‍යාකරණ සොයන්න)
+                </span>
+                <div className="relative">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#84a98c]" />
+                  <input
+                    type="text"
+                    value={grammarSearchQuery}
+                    onChange={(e) => setGrammarSearchQuery(e.target.value)}
+                    placeholder="සොයන්න (e.g. Lesson 02, koto ga arimasu, අත්දැකීම්...)"
+                    className="w-full text-xs rounded-xl border border-[#e9e2d7] pl-10 pr-4 py-2.5 bg-[#fdfbf7] focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#52796f]/15 focus:border-[#52796f]"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Grammar Card vertical list layout - stacked beautifully with comfortable maximum width */}
+            {filteredGrammars.length > 0 ? (
+              <div className="flex flex-col gap-6 max-w-4xl mx-auto" id="grammar-deck-layout">
+                {filteredGrammars.map((grammar) => (
+                  <GrammarCardView
+                    key={grammar.id}
+                    grammar={grammar}
+                    status={grammarProgress[grammar.id] || "UNSTUDIED"}
+                    onStatusChange={(status) => handleUpdateGrammarStatus(grammar.id, status)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="p-12 text-center bg-white rounded-2xl border border-[#e9e2d7] shadow-sm" id="grammar-empty-state">
+                <p className="text-sm font-semibold text-slate-400">ව්‍යාකරණ රටා කිසිවක් හමු නොවීය. Select other search criteria.</p>
+                <p className="text-xs text-slate-300 mt-1">සෙවුම් පද නැවත පරීක්ෂා කර බැලීමට උත්සාහ කරන්න.</p>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* TAB 5: ADVANCED MULTIPLE CHOICE SUPER QUIZ */}
         {activeTab === "quiz" && (
           <QuizView
@@ -1296,86 +1456,26 @@ export default function App() {
             onBackToLearn={() => setActiveTab("learn")}
           />
         )}
+
+        {/* TAB 6: REAL-TIME SCAN AND CAMERA TRANSLATOR */}
+        {activeTab === "translator" && (
+          <RealTimeTranslatorView />
+        )}
       </main>
 
-      {/* Focus Mode Lightbox Slideshow Overlay */}
-      <AnimatePresence>
-        {focusedCardIndex !== null && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-[#2f3e46]/70 backdrop-blur-sm flex items-center justify-center p-4"
-            onClick={() => setFocusedCardIndex(null)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, y: 15 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.95, y: 15 }}
-              className="bg-white max-w-md w-full rounded-[32px] overflow-hidden shadow-2xl border-2 border-[#e9e2d7]"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Header inside popup */}
-              <div className="flex justify-between items-center p-4 border-b border-[#e9e2d7] bg-[#fdfbf7]">
-                <span className="text-xs font-bold text-[#84a98c]">
-                  Focus Slide {focusedCardIndex + 1} / {cards.length}
-                </span>
-                <button
-                  onClick={() => setFocusedCardIndex(null)}
-                  className="font-bold text-lg text-[#84a98c] hover:text-[#bc6c25] px-2 transition-colors"
-                >
-                  ✕
-                </button>
-              </div>
 
-              {/* Central Card body */}
-              <div className="p-6 bg-white">
-                <KanjiCardView
-                  card={cards[focusedCardIndex]}
-                  status={progress[cards[focusedCardIndex].id] || "UNSTUDIED"}
-                  mode="learn"
-                  onStatusChange={(status) => handleUpdateStatus(cards[focusedCardIndex].id, status)}
-                />
-              </div>
-
-              {/* Footer controls for focus element popup */}
-              <div className="flex justify-between items-center px-6 pb-6 pt-2 select-none bg-white">
-                <button
-                  type="button"
-                  disabled={focusedCardIndex === 0}
-                  onClick={() => {
-                    if (focusedCardIndex > 0) setFocusedCardIndex(focusedCardIndex - 1);
-                  }}
-                  className="py-2.5 px-4 bg-white hover:bg-[#f0ede6] border border-[#e9e2d7] text-[#52796f] disabled:opacity-30 rounded-xl transition text-xs font-bold"
-                >
-                  ◀ Prev Card
-                </button>
-
-                <button
-                  type="button"
-                  disabled={focusedCardIndex === cards.length - 1}
-                  onClick={() => {
-                    if (focusedCardIndex < cards.length - 1) setFocusedCardIndex(focusedCardIndex + 1);
-                  }}
-                  className="py-2.5 px-4 bg-[#52796f] hover:bg-[#354f52] text-white disabled:opacity-30 rounded-xl transition text-xs font-bold"
-                >
-                  Next Card ▶
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-      
       {/* Humid Footer context */}
       <footer className="bg-[#2f3e46] text-[#cad2c5] py-8 border-t border-[#e9e2d7]/20 mt-12 text-center text-xs">
         <div className="max-w-7xl mx-auto px-4 space-y-2">
-          <p className="font-semibold text-white font-display">JFT-Basic Level A2 Kanji Cards Study Tracker</p>
-          <p className="text-[10px] text-[#84a98c]">
+          <p className="font-semibold text-white font-display">JFT & N4 Learning Helper</p>
+          <p className="text-[11px] text-white/90 bg-[#354f52] inline-block px-4 py-1.5 rounded-full border border-white/5 font-bold uppercase tracking-wider mt-1 shadow-xs">
+            💻 Developed by: <span className="text-amber-300 font-extrabold font-sans">H.D. Rusith Heshan Induwara</span>
+          </p>
+          <p className="text-[10px] text-[#84a98c] mt-2">
             Powered by Node.js Server Environment, Express APIs & Google Gemini AI Core
           </p>
           <p className="text-[10px] text-[#ece2d0] font-sans mt-3">
-            ❤️ JFT විභාගය ජයගැනීමට අපෙන් සුභපැතුම්! (Learn, Self Assess, & Excel)
+            ❤️ JFT විභාගය ජයගැනීමට අපෙන් සුභපැතුම්! (Created for & by H.D. Rusith Heshan Induwara)
           </p>
         </div>
       </footer>

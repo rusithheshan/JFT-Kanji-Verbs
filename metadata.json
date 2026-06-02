@@ -1,6 +1,6 @@
 {
-  "name": "JFT Kanji Learner",
+  "name": "JFT & N4 Learning Helper",
   "description": "Learn and test JFT-Basic Japanese Kanji with Sinhala & English translations, okurigana support, card tracking, and shuffle practice.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
