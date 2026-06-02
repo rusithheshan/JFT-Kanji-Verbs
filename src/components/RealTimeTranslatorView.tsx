@@ -10,7 +10,8 @@ import {
   BookOpen,
   ArrowRight,
   Globe2,
-  AlertCircle
+  AlertCircle,
+  Upload
 } from "lucide-react";
 
 interface GrammarFeature {
@@ -46,6 +47,45 @@ export default function RealTimeTranslatorView() {
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processSelectedFile(file);
+    }
+  };
+
+  const processSelectedFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setCapturedImage(reader.result);
+        setInputText(""); // Clear text when photo is uploaded
+        stopCamera();
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith("image/")) {
+      processSelectedFile(file);
+    }
+  };
 
   // Turn on device camera
   const startCamera = async () => {
@@ -249,23 +289,61 @@ export default function RealTimeTranslatorView() {
                 </button>
               </div>
             ) : (
-              <div className="text-center space-y-4">
-                <div className="mx-auto w-12 h-12 rounded-full bg-teal-50 flex items-center justify-center text-teal-600">
-                  <Camera className="w-6 h-6" />
+              <div 
+                className={`w-full h-full flex flex-col items-center justify-center p-4 transition-all duration-200 ${isDragging ? "bg-teal-50/50 border-teal-500 scale-[0.98]" : ""}`}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                style={{ cursor: "pointer" }}
+              >
+                <input 
+                  type="file" 
+                  ref={fileInputRef} 
+                  onChange={handleFileChange} 
+                  accept="image/*" 
+                  className="hidden" 
+                />
+                <div className="text-center space-y-4">
+                  <div className="mx-auto flex gap-3 justify-center items-center">
+                    <div className="w-10 h-10 rounded-full bg-teal-50 flex items-center justify-center text-teal-600">
+                      <Camera className="w-5 h-5" />
+                    </div>
+                    <span className="text-xs font-black text-slate-300">OR</span>
+                    <div className="w-10 h-10 rounded-full bg-teal-50 flex items-center justify-center text-teal-600">
+                      <Upload className="w-5 h-5" />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-black text-slate-800">ඡායාරූපයක් එකතු කරන්න / කැමරාව ක්‍රියාත්මක කරන්න</p>
+                    <p className="text-[10px] text-slate-400 font-extrabold px-6 max-w-sm">
+                      Drag & Drop here, click to browse file, or start your camera stream.
+                    </p>
+                  </div>
+                  <div className="flex gap-2.5 justify-center">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        startCamera();
+                      }}
+                      className="px-4 py-2 bg-teal-605 hover:bg-teal-700 text-white rounded-xl text-xs font-black shadow-xs transition cursor-pointer"
+                      style={{ backgroundColor: "#0f766e" }}
+                    >
+                      📷 Start Camera (කැමරාව)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        fileInputRef.current?.click();
+                      }}
+                      className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-black shadow-xs transition cursor-pointer"
+                    >
+                      📁 Upload Photo (ඡාරූපය)
+                    </button>
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <p className="text-xs font-extrabold text-slate-800">කැමරාව මඟින් ඡායාරූපයක් ගන්න</p>
-                  <p className="text-[10px] text-slate-400 font-semibold px-6 max-w-sm">
-                    Allow camera permission to scan textbooks, papers, or letters directly.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={startCamera}
-                  className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-black shadow-xs transition cursor-pointer"
-                >
-                  📷 Start Camera (කැමරාව ක්‍රියාත්මක කරන්න)
-                </button>
               </div>
             )}
           </div>

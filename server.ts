@@ -63,7 +63,9 @@ Ensure your output is a strictly formatted JSON array containing all processed e
               data: pdfBase64,
             },
           },
-          prompt,
+          {
+            text: prompt,
+          },
         ],
         config: {
           responseMimeType: "application/json",
@@ -142,7 +144,7 @@ Exposures must match this schema strictly:
 
       const response = await ai.models.generateContent({
         model: "gemini-3.5-flash",
-        contents: prompt,
+        contents: [{ text: prompt }],
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -223,7 +225,7 @@ Provide the response as a valid JFTParagraph JSON object matching this schema:
 
       const response = await ai.models.generateContent({
         model: "gemini-3.5-flash",
-        contents: prompt,
+        contents: [{ text: prompt }],
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -338,7 +340,7 @@ Generate a strictly valid JSON response conforming exactly to this structure:
 Ensure the output is valid JSON only, without any markdown fence wrappers.
 `;
 
-      contentsList.push(prompt);
+      contentsList.push({ text: prompt });
 
       const response = await ai.models.generateContent({
         model: "gemini-3.5-flash",
