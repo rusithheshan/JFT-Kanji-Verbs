@@ -196,7 +196,7 @@ Exposures must match this schema strictly:
     }
   });
 
-  // API endpoint to generate custom paragraph based on user's progress of OK cards
+  // API endpoint to generate custom paragraph or conversation based on user's selected progress filters
   app.post("/api/generate-paragraph", async (req, res) => {
     try {
       if (!ai) {
@@ -205,34 +205,81 @@ Exposures must match this schema strictly:
         });
       }
 
-      const { okKanjis = [], okVerbs = [], okAdjectives = [] } = req.body;
+      const { 
+        okKanjis = [], 
+        okVerbs = [], 
+        okAdjectives = [], 
+        notYetKanjis = [], 
+        notYetVerbs = [], 
+        notYetAdjectives = [],
+        vocabularyFilter = "all", // "all" | "ok" | "not_yet"
+        contentType = "paragraph"  // "paragraph" | "conversation"
+      } = req.body;
 
-      const prompt = `You are a Japanese Language Teacher (JFT-Basic and JLPT N4 specialist).
-Your task is to write a cohesive, easy-to-read, natural Japanese paragraph (approx. 2-4 sentences, A2 standard) suited for a hospitality, work, or daily life scenario.
+      const prompt = `You are an elite Japanese Language Teacher specializing in JFT-Basic A2 and JLPT N5/N4 syllabus.
+Your task is to write an educational study package of type: "${contentType}" (either a single-screen JLPT/JFT reading comprehension paragraph OR an interactive dialogue/conversation between Speaker A and Speaker B).
 
-You are provided with lists of vocabulary marked as "OK" (already learned / remembered) by the user:
-- OK Kanji characters: ${JSON.stringify(okKanjis)}
-- OK Verbs: ${JSON.stringify(okVerbs)}
-- OK Adjectives: ${JSON.stringify(okAdjectives)}
+Use the following vocabulary lists according to the selected filter: "${vocabularyFilter}" (which indicates if we prioritize OK/learned words, or if we focus on Not Yet learned words to practice them, or if we use All words).
 
-If the user has OK items, prioritize using some of them to formulate the paragraph. If the list is empty, write a standard beginner JFT-Basic A2 paragraph.
+Progress Lists:
+1. OK/Learned Vocabulary:
+- Kanji characters: ${JSON.stringify(okKanjis)}
+- Verbs: ${JSON.stringify(okVerbs)}
+- Adjectives: ${JSON.stringify(okAdjectives)}
 
-Provide the response as a valid JFTParagraph JSON object matching this schema:
+2. Not Yet Learned Vocabulary (Need practice):
+- Kanji characters: ${JSON.stringify(notYetKanjis)}
+- Verbs: ${JSON.stringify(notYetVerbs)}
+- Adjectives: ${JSON.stringify(notYetAdjectives)}
+
+Guidelines:
+- If vocabularyFilter is "ok", construct the Japanese text prioritizing the "OK/Learned" words.
+- If vocabularyFilter is "not_yet", construct the Japanese text incorporating as many "Not Yet Learned" words as possible to let the student practice them.
+- If vocabularyFilter is "all", design a rich, standard JFT-Basic/JLPT level Japanese text mixing both.
+- Ensure the text is natural, beautiful, and completely beginner-friendly (A2 / N5 / N4).
+- Break the entire text into "tokens" (individual words, particles, verbs, adjectives, etc.) for easy hover-learning.
+- If the type is "conversation", make sure to detail each line spoke by Speaker A and Speaker B in the "textLines" array. If it is a "paragraph", write the paragraph lines in "textLines" with "speaker" set to empty or a sequential prefix.
+- CRITICAL: Generate exactly 5 reading/comprehension multiple-choice questions in Japanese based on this text.
+  Each question must have:
+  - "questionJapanese": A clear Japanese question about the meaning, grammar, or scenario of the text.
+  - "options": An array of exactly 4 Japanese answers/options representing keys 'a', 'b', 'c', and 'd'.
+  - "correctOptionKey": The correct option key ('a', 'b', 'c', or 'd').
+  - "explanationSinhala": A descriptive, clear, and high-quality explanation written in Sinhala explaining why that option is correct based on the text. Explain grammar rules, kanji, or sentence meanings in a friendly, helpful Sinhala tutor voice.
+
+Provide the response as a valid JSON object matching this schema:
 {
-  "titleSinhala": "Title of paragraph in Sinhala",
-  "titleEnglish": "Title of paragraph in English",
-  "fullEnglishTranslation": "Combined paragraph English translation",
-  "fullSinhalaTranslation": "Combined paragraph Sinhala translation",
+  "titleSinhala": "Title translated to Sinhala",
+  "titleEnglish": "Title translated to English",
+  "contentType": "paragraph" or "conversation",
+  "fullEnglishTranslation": "The entire text translated to flowing English",
+  "fullSinhalaTranslation": "The entire text translated to flowing beautiful Sinhala",
+  "textLines": [
+    {
+      "speaker": "A or B (or leave empty if paragraph)",
+      "japanese": "The exact Japanese line",
+      "english": "English translation for this line",
+      "sinhala": "Sinhala translation for this line"
+    }
+  ],
   "tokens": [
     {
       "id": "A unique token id like t-1, t-2",
-      "text": "The exact word/phrase text as it appears in the paragraph, e.g. '昨日は', '車を', '行きます'",
+      "text": "The exact Japanese word/phrase text as it appears in the passage, e.g. '昨日は', '車を', '行きます'",
       "kanji": "The Kanji form of this exact word/phrase (if applicable, otherwise text itself), e.g. '昨日', '白い', '車', '行く'",
-      "kanjiChar": "The core single Kanji character involved inside this word (if any, e.g. '昨' for '昨日', '白' for '白い', '車' for '車', '行' for '行きます'). If none, leave empty string.",
+      "kanjiChar": "The core single Kanji character involved inside this word (if any, e.g. '昨', '白', '車', '行'). If none, leave empty string.",
       "hiragana": "The plain Hiragana representation of this exact word, e.g. 'きのう', 'しろい', 'くるま', 'いきます'",
-      "type": "Must be one of 'kanji' | 'verb' | 'adjective' | 'particle' | 'other'",
+      "type": "Must be one of 'kanji' | 'verb' | 'adjective' | 'particle' | 'grammar' | 'other'",
       "englishMeaning": "Corresponding word translation in English",
       "sinhalaMeaning": "Corresponding word translation in Sinhala"
+    }
+  ],
+  "questions": [
+    {
+      "id": "q-1 through q-5",
+      "questionJapanese": "The question text in Japanese",
+      "options": ["Option a", "Option b", "Option c", "Option d"],
+      "correctOptionKey": "a or b or c or d",
+      "explanationSinhala": "Detailed explanation of the correct option and context in Sinhala"
     }
   ]
 }`;
@@ -247,8 +294,22 @@ Provide the response as a valid JFTParagraph JSON object matching this schema:
             properties: {
               titleSinhala: { type: Type.STRING },
               titleEnglish: { type: Type.STRING },
+              contentType: { type: Type.STRING },
               fullEnglishTranslation: { type: Type.STRING },
               fullSinhalaTranslation: { type: Type.STRING },
+              textLines: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    speaker: { type: Type.STRING },
+                    japanese: { type: Type.STRING },
+                    english: { type: Type.STRING },
+                    sinhala: { type: Type.STRING }
+                  },
+                  required: ["speaker", "japanese", "english", "sinhala"]
+                }
+              },
               tokens: {
                 type: Type.ARRAY,
                 items: {
@@ -265,9 +326,26 @@ Provide the response as a valid JFTParagraph JSON object matching this schema:
                   },
                   required: ["id", "text", "type", "englishMeaning", "sinhalaMeaning"]
                 }
+              },
+              questions: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    id: { type: Type.STRING },
+                    questionJapanese: { type: Type.STRING },
+                    options: {
+                      type: Type.ARRAY,
+                      items: { type: Type.STRING }
+                    },
+                    correctOptionKey: { type: Type.STRING },
+                    explanationSinhala: { type: Type.STRING }
+                  },
+                  required: ["id", "questionJapanese", "options", "correctOptionKey", "explanationSinhala"]
+                }
               }
             },
-            required: ["titleSinhala", "titleEnglish", "fullEnglishTranslation", "fullSinhalaTranslation", "tokens"]
+            required: ["titleSinhala", "titleEnglish", "contentType", "fullEnglishTranslation", "fullSinhalaTranslation", "textLines", "tokens", "questions"]
           }
         }
       });

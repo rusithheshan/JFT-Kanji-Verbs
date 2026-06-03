@@ -18,7 +18,8 @@ import {
   AlertCircle,
   Zap,
   Languages,
-  HelpCircle
+  HelpCircle,
+  BookMarked
 } from "lucide-react";
 import { PRELOADED_KANJI, KanjiCard } from "./data/preloadedKanji";
 import { LearningStatus, UserProgress } from "./types";
@@ -496,94 +497,87 @@ export default function App() {
           </div>
         </div>
 
-        {/* Global tab Switcher row split beautifully into 2 rows to fit smaller screens and make spacing clean */}
-        <div className="bg-[#fdbbf7]/0 border-t border-[#e9e2d7] px-4 py-4">
-          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex flex-col gap-2.5 w-full">
-              {/* Row 1: Primary core study cards (4 items) */}
-              <div className="flex flex-wrap gap-1.5 bg-[#f0ede6]/70 p-1.5 rounded-2xl w-fit">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("learn")}
-                  className={`px-5 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-                    activeTab === "learn"
-                      ? "bg-white text-[#52796f] shadow-xs font-black border border-[#e9e2d7]/50"
-                      : "text-[#84a98c] hover:bg-white/40 hover:text-[#52796f]"
-                  }`}
-                >
-                  <GraduationCap className="w-3.5 h-3.5 text-[#52796f]" /> JFT Kanji
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("test")}
-                  className={`px-5 py-2 rounded-xl text-xs font-bold transition-all duration-150 flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-                    activeTab === "test"
-                      ? "bg-white text-[#52796f] shadow-xs font-black border border-[#e9e2d7]/50"
-                      : "text-[#84a98c] hover:bg-white/40 hover:text-[#52796f]"
-                  }`}
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse" /> Check Kanji Knowledge
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("verbs")}
-                  className={`px-5 py-2 rounded-xl text-xs font-bold transition-all duration-150 flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-                    activeTab === "verbs"
-                      ? "bg-white text-[#52796f] shadow-xs font-black border border-[#e9e2d7]/50"
-                      : "text-[#84a98c] hover:bg-white/40 hover:text-[#52796f]"
-                  }`}
-                >
-                  <Zap className="w-3.5 h-3.5 text-orange-500" /> Verbs (ක්‍රියාපද)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("adjectives")}
-                  className={`px-5 py-2 rounded-xl text-xs font-bold transition-all duration-150 flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-                    activeTab === "adjectives"
-                      ? "bg-white text-[#52796f] shadow-xs font-black border border-[#e9e2d7]/50"
-                      : "text-[#84a98c] hover:bg-white/40 hover:text-[#52796f]"
-                  }`}
-                >
-                  <Languages className="w-3.5 h-3.5 text-teal-600" /> Adjectives (විශේෂණ)
-                </button>
-              </div>
-
-              {/* Row 2: Secondary grammar context, interactive quiz and JFT Book Dictionary (3 items) */}
-              <div className="flex flex-wrap gap-1.5 bg-[#ece2d0]/50 p-1.5 rounded-2xl w-fit border border-[#e9e2d7]/40 shadow-3xs">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("grammar")}
-                  className={`px-5 py-2 rounded-xl text-xs font-bold transition-all duration-150 flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-                    activeTab === "grammar"
-                      ? "bg-white text-[#bc6c25] shadow-xs font-black border border-[#bc6c25]/15"
-                      : "text-[#bc6c25]/75 hover:bg-white/40 hover:text-[#bc6c25]"
-                  }`}
-                >
-                  <BookOpen className="w-3.5 h-3.5 text-[#bc6c25]" /> Learn Grammar (ව්‍යාකරණ)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("quiz")}
-                  className={`px-5 py-2 rounded-xl text-xs font-bold transition-all duration-150 flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-                    activeTab === "quiz"
-                      ? "bg-white text-[#52796f] shadow-xs font-black border border-[#e9e2d7]/40"
-                      : "text-[#84a98c] hover:bg-white/40 hover:text-[#52796f]"
-                  }`}
-                >
-                  <HelpCircle className="w-3.5 h-3.5 text-emerald-600" /> Super Quiz (ප්‍රශ්නාවලිය)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("dictionary")}
-                  className={`px-5 py-2 rounded-xl text-xs font-black transition-all duration-150 flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-                    activeTab === "dictionary"
-                      ? "bg-teal-700 text-white shadow-xs font-black"
-                      : "text-teal-800 hover:bg-teal-50"
-                  }`}
-                >
-                  <Languages className="w-3.5 h-3.5 text-teal-600" /> JFT Dictionary (ශබ්දකෝෂය)
-                </button>
-              </div>
+        {/* Unified single-row tab switcher responsive bar */}
+        <div className="bg-[#fdbbf7]/0 border-t border-[#e9e2d7] px-4 py-3.5">
+          <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex flex-wrap gap-1.5 bg-[#f0ede6]/80 p-1.5 rounded-2xl w-full lg:w-auto shadow-3xs">
+              <button
+                type="button"
+                onClick={() => setActiveTab("learn")}
+                className={`px-4.5 py-2.5 rounded-xl text-xs font-black transition-all duration-200 flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                  activeTab === "learn"
+                    ? "bg-white text-[#52796f] shadow-xs border border-[#e9e2d7]/50"
+                    : "text-[#52796f]/70 hover:bg-white/45 hover:text-[#52796f]"
+                }`}
+              >
+                <GraduationCap className="w-4 h-4 text-[#52796f]" /> JFT Kanji
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("test")}
+                className={`px-4.5 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                  activeTab === "test"
+                    ? "bg-white text-[#52796f] shadow-xs border border-[#e9e2d7]/50"
+                    : "text-[#52796f]/70 hover:bg-white/45 hover:text-[#52796f]"
+                }`}
+              >
+                <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" /> Kanji Test
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("verbs")}
+                className={`px-4.5 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                  activeTab === "verbs"
+                    ? "bg-white text-[#52796f] shadow-xs border border-[#e9e2d7]/50"
+                    : "text-[#52796f]/70 hover:bg-white/45 hover:text-[#52796f]"
+                }`}
+              >
+                <Zap className="w-4 h-4 text-orange-500" /> Verbs (ක්‍රියාපද)
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("adjectives")}
+                className={`px-4.5 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                  activeTab === "adjectives"
+                    ? "bg-white text-[#52796f] shadow-xs border border-[#e9e2d7]/50"
+                    : "text-[#52796f]/70 hover:bg-white/45 hover:text-[#52796f]"
+                }`}
+              >
+                <Languages className="w-4 h-4 text-teal-600" /> Adjectives (විශේෂණ)
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("grammar")}
+                className={`px-4.5 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                  activeTab === "grammar"
+                    ? "bg-white text-[#bc6c25] shadow-xs border border-[#bc6c25]/15"
+                    : "text-[#bc6c25]/75 hover:bg-white/45 hover:text-[#bc6c25]"
+                }`}
+              >
+                <BookOpen className="w-4 h-4 text-[#bc6c25]" /> Grammar (ව්‍යාකරණ)
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("quiz")}
+                className={`px-4.5 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                  activeTab === "quiz"
+                    ? "bg-white text-[#52796f] shadow-xs border border-[#e9e2d7]/40"
+                    : "text-[#52796f]/70 hover:bg-white/45 hover:text-[#52796f]"
+                }`}
+              >
+                <HelpCircle className="w-4 h-4 text-emerald-600" /> JFT Quiz (ප්‍රශ්නාවලිය)
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("dictionary")}
+                className={`px-4.5 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                  activeTab === "dictionary"
+                    ? "bg-teal-700 text-white shadow-xs"
+                    : "text-teal-800 hover:bg-teal-50"
+                }`}
+              >
+                <BookMarked className="w-4 h-4 text-teal-600" /> Dictionary (ශබ්දකෝෂය)
+              </button>
             </div>
           </div>
         </div>

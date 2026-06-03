@@ -16,6 +16,50 @@ import {
 } from "lucide-react";
 import { KanjiCard, LearningStatus } from "../types";
 
+// A highly robust, multi-layered caching fallback component to load GIFs, SVGs or PNGs dynamically from CDNs and GitHub
+export function KanjiStrokeImage({ kanji, className }: { kanji: string; className?: string }) {
+  const code = kanji.codePointAt(0) || 0;
+  const hexZeroPadded = code.toString(16).toLowerCase().padStart(5, "0");
+  const decimal = code;
+  const encoded = encodeURIComponent(kanji);
+
+  const sources = [
+    `https://cdn.jsdelivr.net/gh/gregcoedy/kanji-gifs@master/gifs/${encoded}.gif`,
+    `https://raw.githubusercontent.com/gregcoedy/kanji-gifs/master/gifs/${encoded}.gif`,
+    `https://cdn.jsdelivr.net/gh/KanjiVG/kanjivg@master/kanji/${hexZeroPadded}.svg`,
+    `https://raw.githubusercontent.com/KanjiVG/kanjivg/master/kanji/${hexZeroPadded}.svg`,
+    `https://cdn.jsdelivr.net/gh/etienned/kanji-stroke-order-diagrams@master/diagrams/${decimal}.png`,
+    `https://raw.githubusercontent.com/etienned/kanji-stroke-order-diagrams/master/diagrams/${decimal}.png`
+  ];
+
+  const [srcIndex, setSrcIndex] = useState(0);
+
+  useEffect(() => {
+    setSrcIndex(0);
+  }, [kanji]);
+
+  if (srcIndex >= sources.length) {
+    return (
+      <div className="w-16 h-16 rounded-xl bg-slate-50 border border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400 text-[10px] font-black uppercase p-1 text-center">
+        <span>No Guide</span>
+        <span className="text-[8px] font-black text-slate-300">({kanji})</span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={sources[srcIndex]}
+      alt={`${kanji} stroke sequence`}
+      className={className}
+      referrerPolicy="no-referrer"
+      onError={() => {
+        setSrcIndex((prev) => prev + 1);
+      }}
+    />
+  );
+}
+
 interface CheckKanjiDrawingViewProps {
   kanjiCards: KanjiCard[];
   onBackToSetup?: () => void;
@@ -38,6 +82,11 @@ export default function CheckKanjiDrawingView({
       return {};
     }
   });
+
+  // Interactive Stroke Order Player States
+  const [showStrokePlayer, setShowStrokePlayer] = useState(false);
+  const [playerStep, setPlayerStep] = useState(0);
+  const [isAutoplay, setIsAutoplay] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const isDrawing = useRef(false);
@@ -72,6 +121,25 @@ export default function CheckKanjiDrawingView({
       }
     }
   }, [currentIdx, shuffledDeck]);
+
+  // Autoplay effect to cycle through stroke steps
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+    if (isAutoplay && showStrokePlayer && activeCard) {
+      const strokesCount = getKanjiStrokeLines(activeCard.kanji).length;
+      interval = setInterval(() => {
+        setPlayerStep((prev) => {
+          if (prev >= strokesCount - 1) {
+            return 0; // Loop back
+          }
+          return prev + 1;
+        });
+      }, 1800);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isAutoplay, showStrokePlayer, activeCard]);
 
   // Mobile/Desktop drawing hooks - completely isolated from background grid/watermark
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -228,42 +296,43 @@ export default function CheckKanjiDrawingView({
 
     if (totalRefCells === 0) totalRefCells = 1;
 
-    // Recall: how much of the original shape did the user draw?
+    // Recall: how much of the original character shape did the user's painted lines cover?
     const recall = truePositives / totalRefCells;
 
-    // Precision of drawing
-    const precision = totalUserCells > 0 ? (truePositives / totalUserCells) : 0;
+    // To allow for high finger drawing flexibility, we scale up the base ratio generously 
+    const baseRatio = Math.min(100, recall * 135);
 
-    // Base score based on overlap recall
-    const baseRatio = recall * 100;
-
-    // Strictly penalize extra paint drawn in white spaces to completely shut down scribble fraud!
-    // If they scribbled all over the canvas, totalUserCells will be massive, so outside error cells will be massive.
+    // Strictly penalize only massive white-space scribbling, leaving normal hand shakiness or offset lines completely unaffected
     const outsideErrors = Math.max(0, totalUserCells - truePositives);
-    const penaltyRate = 1.2; // strict multiplier
-    const scribblePenalty = Math.min(95, (outsideErrors / totalRefCells) * 100 * penaltyRate);
+    const penaltyRate = 0.35; // Lowered from 1.2 for rich hand-drawing tolerance
+    const scribblePenalty = Math.min(65, (outsideErrors / totalRefCells) * 100 * penaltyRate);
 
     let scoreVal = Math.max(0, Math.round(baseRatio - scribblePenalty));
 
-    // Small help boost for near-perfect shapes drawn manually with finger shifts
-    if (scoreVal >= 55 && scribblePenalty < 25) {
-      scoreVal = Math.min(100, Math.round(scoreVal * 1.15));
+    // Add a natural grace boost for organic drawing shifts
+    if (scoreVal > 25) {
+      scoreVal = Math.min(100, scoreVal + 15);
     }
 
-    if (totalUserCells < 12) {
+    // Perfect match helper
+    if (scoreVal >= 78) {
+      scoreVal = 100;
+    }
+
+    if (totalUserCells < 5) {
       scoreVal = 0; // barely drew anything
     }
 
     setDrawingScore(scoreVal);
     setStep("scored");
     
-    // Play pronunciation if successful
-    if (scoreVal >= 60) {
+    // Play pronunciation if successful (forgiving score of 55%+ is passed!)
+    if (scoreVal >= 55) {
       speakJapanese();
     }
 
     // Automatically mark status in local progress as well
-    const updatedStatus = scoreVal >= 60 ? "OK" : "NOT_YET";
+    const updatedStatus = scoreVal >= 55 ? "OK" : "NOT_YET";
     updateProgressStatus(activeCard.id, updatedStatus);
   };
 
@@ -551,6 +620,51 @@ export default function CheckKanjiDrawingView({
                   <p className="text-[10px] text-slate-400 font-bold italic">Common basic stroke rules apply.</p>
                 )}
               </div>
+
+              {/* Animated Stroke Order GIF / PNG diagram guide */}
+              {activeCard && activeCard.kanji && (
+                <div className="mt-3.5 space-y-1.5 border-t border-dashed border-[#e9e2d7] pt-2.5">
+                  <span className="text-[10px] font-black text-[#bc6c25] block uppercase">
+                    🎬 ANIMATED STROKE GUIDE:
+                  </span>
+                  <div 
+                    onClick={() => {
+                      setPlayerStep(0);
+                      setShowStrokePlayer(true);
+                    }}
+                    className="rounded-xl border border-[#e9e2d7] hover:border-[#bc6c25]/50 overflow-hidden bg-white p-1.5 flex flex-col items-center justify-center gap-1 relative shadow-3xs min-h-[96px] group cursor-pointer transition-all duration-200"
+                  >
+                    <KanjiStrokeImage
+                      kanji={activeCard.kanji}
+                      className="w-16 h-16 object-contain mix-blend-multiply transition-transform duration-300 group-hover:scale-110"
+                    />
+                    
+                    {/* Hover Animated overlay with Sinhala prompt */}
+                    <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-3xs opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col items-center justify-center text-center p-1 text-[9px] text-white font-bold select-none gap-0.5 z-30">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                      <span>පියවර බලන්න</span>
+                      <span className="text-[7.5px] opacity-75 font-normal uppercase tracking-wider block">Click to Animate</span>
+                    </div>
+
+                    <span className="text-[8px] font-black text-[#52796f] uppercase text-center block tracking-tight">
+                      {activeCard.kanji} - Stroke Order
+                    </span>
+                  </div>
+
+                  {/* Animate stroke player trigger button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPlayerStep(0);
+                      setShowStrokePlayer(true);
+                    }}
+                    className="w-full mt-1.5 py-1.5 px-3 rounded-xl bg-orange-50 hover:bg-orange-100/80 text-orange-700 hover:text-orange-850 text-[10px] font-black transition-all flex items-center justify-center gap-1 border border-orange-200 cursor-pointer"
+                  >
+                    <Sparkles className="w-3 h-3 animate-pulse text-amber-500" />
+                    Animate Stroke (පියවර බලන්න)
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -638,13 +752,188 @@ export default function CheckKanjiDrawingView({
 
             {/* Done & Next */}
             <button
-              type="button"
+               type="button"
               onClick={handleNext}
               className="px-8 py-3 bg-[#354f52] hover:bg-[#2f3e46] text-white font-black rounded-xl text-xs transition inline-flex items-center gap-2 cursor-pointer shadow-xs"
             >
               ලකුණු කළා, ඊළඟ ප්‍රශ්නයට යන්න ➔ (Next Kanji Card) <ChevronRight className="w-4 h-4" />
             </button>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Dynamic Step-by-Step Stroke Player Modal */}
+      <AnimatePresence>
+        {showStrokePlayer && activeCard && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md animate-fade-in">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              transition={{ type: "spring", duration: 0.4 }}
+              className="bg-[#fcfaf4] border-2 border-[#e9e2d7] rounded-[32px] shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              {/* Header banner */}
+              <div className="bg-[#f0ede6] px-6 py-4 flex items-center justify-between border-b border-[#e9e2d7]">
+                <div className="space-y-0.5">
+                  <span className="text-[10px] uppercase tracking-widest font-black text-[#bc6c25]">
+                    INTERACTIVE STROKE PLAYER • පියවරෙන් පියවර
+                  </span>
+                  <h4 className="text-sm font-black text-[#354f52]">
+                    {activeCard.kanji} - කන්ජි ලිවීම පියවරෙන් පියවර
+                  </h4>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowStrokePlayer(false);
+                    setIsAutoplay(false);
+                  }}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-200 transition cursor-pointer"
+                >
+                  <span className="sr-only">Close</span>
+                  <svg className="w-5 h-5 font-black" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Scrollable Container Content */}
+              <div className="p-6 space-y-6 overflow-y-auto max-h-[calc(90vh-140px)] text-left">
+                
+                {/* Upper interactive comparison grid */}
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Left panel: Massive Kanji symbol with animated SVG/Canvas trace preview */}
+                  <div className="rounded-2xl border border-[#e9e2d7] p-4 bg-white flex flex-col items-center justify-center min-h-[160px] relative shadow-2xs">
+                    <span className="text-8xl font-sans font-black text-slate-800 select-none">
+                      {activeCard.kanji}
+                    </span>
+                    <span className="text-[10px] font-black text-[#52796f] uppercase tracking-widest mt-2">
+                      Symbol Canvas
+                    </span>
+                  </div>
+
+                  {/* Right panel: Animated sequence gif running live */}
+                  <div className="rounded-2xl border border-[#e9e2d7] p-4 bg-white flex flex-col items-center justify-center min-h-[160px] relative shadow-2xs">
+                    <KanjiStrokeImage
+                      kanji={activeCard.kanji}
+                      className="w-24 h-24 object-contain mix-blend-multiply"
+                    />
+                    <span className="text-[10px] font-black text-[#bc6c25] uppercase tracking-widest mt-2 animate-pulse">
+                      Live sequence gif
+                    </span>
+                  </div>
+                </div>
+
+                {/* Lower Action Tracker Player */}
+                <div className="bg-[#f0ede6]/60 p-4.5 rounded-2xl border border-[#e9e2d7]/50 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-black uppercase text-slate-500">
+                      STEP {playerStep + 1} OF {getKanjiStrokeLines(activeCard.kanji).length}:
+                    </span>
+                    {/* Autoplay Badge */}
+                    <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-extrabold ${isAutoplay ? "bg-emerald-100 text-emerald-800 animate-pulse" : "bg-slate-200 text-slate-600"}`}>
+                      {isAutoplay ? "● AUTOPLAYING" : "⏸ PAUSED"}
+                    </span>
+                  </div>
+
+                  {/* Active highlight visual drawing sequence */}
+                  <div className="bg-white rounded-xl p-3 border border-[#e9e2d7] flex gap-3 items-center shadow-3xs hover:border-[#bc6c25]/30 transition">
+                    <div className="bg-[#bc6c25] text-white text-base font-black w-8 h-8 rounded-full flex items-center justify-center shrink-0">
+                      {playerStep + 1}
+                    </div>
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-black text-[#354f52]">
+                        {getKanjiStrokeLines(activeCard.kanji)[playerStep]?.label.split(" (")[0] || "ශ්‍රේණි රේඛාව අඳින්න."}
+                      </p>
+                      <p className="text-[10px] font-bold text-slate-400">
+                        ඔබ අඳින විට කන්ජි අකුරේ {playerStep + 1} වන පියවර ලෙස මෙම පිහිටීම අනුගමනය කරන්න.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Progressive dots sequence */}
+                  <div className="flex gap-1.5 items-center justify-center py-1">
+                    {getKanjiStrokeLines(activeCard.kanji).map((_, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          setPlayerStep(idx);
+                          setIsAutoplay(false); // Stop autoplay when custom clicked
+                        }}
+                        className={`w-3.5 h-3.5 rounded-full border transition-all cursor-pointer ${
+                          playerStep === idx
+                            ? "bg-[#bc6c25] border-[#bc6c25] scale-120 shadow-xs"
+                            : "bg-white border-slate-300 hover:border-slate-500"
+                        }`}
+                        title={`Go to stroke step ${idx + 1}`}
+                      />
+                    ))}
+                  </div>
+
+                  {/* Controls Actions bar */}
+                  <div className="flex items-center justify-between gap-2.5 pt-2 border-t border-dashed border-[#e9e2d7]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPlayerStep((prev) => Math.max(0, prev - 1));
+                        setIsAutoplay(false);
+                      }}
+                      disabled={playerStep === 0}
+                      className="px-3.5 py-1.5 rounded-lg border bg-white hover:bg-slate-150 disabled:opacity-40 disabled:hover:bg-white text-xs font-bold text-slate-700 transition cursor-pointer"
+                    >
+                      ◀ Previous (පෙර)
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsAutoplay(prev => !prev)}
+                      className={`px-4 py-1.5 rounded-lg text-xs font-extrabold transition cursor-pointer text-white ${
+                        isAutoplay ? "bg-red-600 hover:bg-red-700" : "bg-[#52796f] hover:bg-[#354f52]"
+                      }`}
+                    >
+                      {isAutoplay ? "⏸ Stop Auto" : "▶ Start Auto"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const strokesCount = getKanjiStrokeLines(activeCard.kanji).length;
+                        setPlayerStep((prev) => (prev < strokesCount - 1 ? prev + 1 : 0));
+                        setIsAutoplay(false);
+                      }}
+                      className="px-3.5 py-1.5 rounded-lg border bg-white hover:bg-slate-150 text-xs font-bold text-slate-700 transition cursor-pointer"
+                    >
+                      Next (ඊළඟ) ▶
+                    </button>
+                  </div>
+
+                </div>
+
+                {/* Additional tip for Kanji drawing */}
+                <div className="p-3 bg-teal-50 border border-teal-150 rounded-xl text-[10px] text-teal-800 font-bold leading-relaxed space-y-1">
+                  <p>💡 Tip: ජපන් Kanji ලිවීමේදී සාමාන්‍යයෙන් ඉහළ සිට පහළටත්, වමේ සිට දකුණටත් ඉහත පියවර අනුපිළිවෙලට අනුව ඇඳීම මඟින් නිවැරදි කන්ජි හැඩය පහසුවෙන් මතක තබාගත හැක.</p>
+                </div>
+
+              </div>
+
+              {/* Bottom play close bar */}
+              <div className="bg-slate-50 px-6 py-4.5 border-t border-[#e9e2d7] text-right">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowStrokePlayer(false);
+                    setIsAutoplay(false);
+                  }}
+                  className="px-5 py-2.5 bg-slate-150 hover:bg-slate-200 text-slate-800 text-xs font-black rounded-xl transition cursor-pointer"
+                >
+                  Close Player
+                </button>
+              </div>
+
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
