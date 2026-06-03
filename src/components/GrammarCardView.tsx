@@ -35,7 +35,7 @@ export default function GrammarCardView({
       case "OK":
         return "border-[#52796f] border-b-8 bg-white";
       case "NOT_YET":
-        return "border-[#bc6c25] border-b-8 bg-white";
+        return "border-amber-400 border-b-8 bg-white";
       default:
         return "border-[#e9e2d7] border-b-8 bg-white";
     }
@@ -51,7 +51,7 @@ export default function GrammarCardView({
         );
       case "NOT_YET":
         return (
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-[#ece2d0] text-[#bc6c25]">
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
             <AlertCircle className="w-2.5 h-2.5" /> NOT YET
           </span>
         );
@@ -94,7 +94,7 @@ export default function GrammarCardView({
 
           {/* Central content */}
           <div className="flex-1 flex flex-col items-center justify-center text-center py-8 space-y-6">
-            <span className="text-[11px] font-black tracking-widest text-[#bc6c25] uppercase">
+            <span className="text-[11px] font-black tracking-widest text-[#52796f] uppercase">
               GRAMMAR PATTERN • ව්‍යාකරණ රටාව
             </span>
             <h3 className="font-display font-black text-4xl text-[#354f52] leading-tight tracking-tight">
@@ -129,7 +129,7 @@ export default function GrammarCardView({
           {/* Top of Back - Title & Pattern Header */}
           <div className="space-y-3.5 border-b border-[#f0ede6] pb-4">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black text-[#bc6c25] uppercase tracking-wider">
+              <span className="text-[10px] font-black text-[#52796f] uppercase tracking-wider">
                 LESSON {grammar.index} • DETAILED REFERENCE
               </span>
               <button
@@ -146,8 +146,8 @@ export default function GrammarCardView({
             </h3>
 
             {/* Pattern Construction */}
-            <div className="bg-[#fcfaf2] border border-[#e9e2d7] p-3.5 rounded-2xl font-mono text-sm text-[#2f3e46] font-bold shadow-inner">
-              <span className="text-[10px] block text-[#bc6c25] font-sans font-black mb-1.5">PATTERN STRUCTURE:</span>
+            <div className="bg-[#cad2c5]/10 border border-[#cad2c5]/30 p-3.5 rounded-2xl font-mono text-sm text-[#2f3e46] font-bold shadow-inner">
+              <span className="text-[10px] block text-[#52796f] font-sans font-black mb-1.5">PATTERN STRUCTURE:</span>
               <code>{grammar.pattern}</code>
             </div>
           </div>
@@ -196,10 +196,10 @@ export default function GrammarCardView({
 
             {/* Interactive Sentence Examples */}
             <div className="space-y-3 pt-3 border-t border-dashed border-[#e9e2d7]">
-              <span className="text-[10px] font-black text-[#bc6c25] uppercase block">ආදර්ශ වාක්‍ය (Examples):</span>
+              <span className="text-[10px] font-black text-[#52796f] uppercase block">ආදර්ශ වාක්‍ය (Examples):</span>
               <div className="space-y-3">
                 {grammar.examples.map((ex, exIdx) => (
-                  <div key={exIdx} className="p-3.5 bg-white border border-[#e9e2d7] rounded-2xl relative hover:bg-[#fcfaf2] transition-colors group shadow-2xs">
+                  <div key={exIdx} className="p-3.5 bg-white border border-[#e9e2d7] rounded-2xl relative hover:bg-[#cad2c5]/5 shadow-2xs">
                     <div className="flex items-start justify-between gap-2">
                       <div className="space-y-1">
                         <p className="text-base font-black text-[#354f52] leading-tight select-all">{ex.japanese}</p>
@@ -209,7 +209,7 @@ export default function GrammarCardView({
                       <button
                         type="button"
                         onClick={(e) => speakJapanese(e, ex.japanese)}
-                        className="p-2 text-slate-400 hover:text-[#52796f] bg-[#f0ede6]/70 rounded-xl shrink-0 group-hover:bg-[#f0ede6] transition cursor-pointer"
+                        className="p-2 text-[#52796f] hover:text-white hover:bg-[#52796f] bg-[#f0ede6]/70 rounded-xl shrink-0 transition cursor-pointer font-bold"
                         title="හඬ සවන් දෙන්න"
                       >
                         <Volume2 className="w-4 h-4" />
@@ -232,8 +232,8 @@ export default function GrammarCardView({
                 onClick={() => onStatusChange?.("NOT_YET")}
                 className={`py-2.5 px-4 rounded-xl text-xs font-black transition flex items-center justify-center gap-1 cursor-pointer ${
                   status === "NOT_YET"
-                    ? "bg-[#bc6c25] text-white shadow-xs"
-                    : "bg-[#ece2d0]/50 text-[#bc6c25] hover:bg-[#ece2d0]"
+                    ? "bg-amber-500 text-white shadow-xs"
+                    : "bg-amber-50 text-amber-600 hover:bg-amber-100/75 border border-amber-200"
                 }`}
               >
                 ❌ NOT YET

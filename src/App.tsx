@@ -19,7 +19,14 @@ import {
   Zap,
   Languages,
   HelpCircle,
-  BookMarked
+  BookMarked,
+  BarChart4,
+  Timer,
+  Play,
+  Pause,
+  Award,
+  Coffee,
+  Brain
 } from "lucide-react";
 import { PRELOADED_KANJI, KanjiCard } from "./data/preloadedKanji";
 import { LearningStatus, UserProgress } from "./types";
@@ -33,10 +40,94 @@ import { PRELOADED_GRAMMAR } from "./data/preloadedGrammar";
 import { JFTGrammar } from "./types";
 import GrammarCardView from "./components/GrammarCardView";
 import DictionaryView from "./components/DictionaryView";
+import StatisticsView from "./components/StatisticsView";
 
 export default function App() {
   // Navigation tabs
-  const [activeTab, setActiveTab] = useState<"learn" | "test" | "verbs" | "adjectives" | "grammar" | "quiz" | "dictionary">("learn");
+  const [activeTab, setActiveTab] = useState<"learn" | "test" | "verbs" | "adjectives" | "grammar" | "quiz" | "dictionary" | "stats">("learn");
+
+  // Pomodoro study timer states
+  const [pomodoroSeconds, setPomodoroSeconds] = useState(25 * 60); // 25 minutes standard Focus Timer
+  const [isTimerRunning, setIsTimerRunning] = useState(false);
+  const [pomodoroMode, setPomodoroMode] = useState<"focus" | "break">("focus");
+  const [totalSessionStudyTime, setTotalSessionStudyTime] = useState(() => {
+    return Number(sessionStorage.getItem("jft_total_session_study_time") || "0");
+  });
+  
+  // Daily study progress & targets and sync status
+  const [dailyGoalToggle, setDailyGoalToggle] = useState(() => {
+    return Number(localStorage.getItem("jft_daily_study_goal") || "20");
+  });
+  const [studiedTodayCount, setStudiedTodayCount] = useState(() => {
+    try {
+      const today = new Date().toISOString().split("T")[0];
+      const saved = localStorage.getItem("jft_study_activity_log");
+      if (saved) {
+        const log = JSON.parse(saved);
+        return log[today] || 0;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return 0;
+  });
+
+  // Pomodoro ticking effect
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+    if (isTimerRunning) {
+      interval = setInterval(() => {
+        setPomodoroSeconds((prev) => {
+          if (prev <= 1) {
+            setIsTimerRunning(false);
+            const nextMode = pomodoroMode === "focus" ? "break" : "focus";
+            setPomodoroMode(nextMode);
+            return nextMode === "focus" ? 25 * 60 : 5 * 60;
+          }
+          return prev - 1;
+        });
+
+        // Increment session focus study seconds
+        if (pomodoroMode === "focus") {
+          setTotalSessionStudyTime((prevTime) => {
+            const newTime = prevTime + 1;
+            sessionStorage.setItem("jft_total_session_study_time", String(newTime));
+            return newTime;
+          });
+        }
+      }, 1000);
+    } else {
+      if (interval) clearInterval(interval);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isTimerRunning, pomodoroMode]);
+
+  // Sync daily study settings across views and storage
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const savedGoal = Number(localStorage.getItem("jft_daily_study_goal") || "20");
+      setDailyGoalToggle(savedGoal);
+      
+      const today = new Date().toISOString().split("T")[0];
+      try {
+        const savedLog = localStorage.getItem("jft_study_activity_log");
+        if (savedLog) {
+          const log = JSON.parse(savedLog);
+          setStudiedTodayCount(log[today] || 0);
+        }
+      } catch (e) {}
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    window.addEventListener("jft_goal_changed", handleStorageChange as EventListener);
+    
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("jft_goal_changed", handleStorageChange as EventListener);
+    };
+  }, []);
 
   // Main Kanji Deck State (Preloaded base cards + any PDF parsed results + custom AI generated ones)
   const [cards, setCards] = useState<KanjiCard[]>(() => {
@@ -177,12 +268,37 @@ export default function App() {
     setIsTestCardRevealed(false);
   };
 
+  // Track study interactions in activity log
+  const recordStudyActivity = () => {
+    try {
+      const today = new Date().toISOString().split("T")[0];
+      const saved = localStorage.getItem("jft_study_activity_log");
+      let log: { [key: string]: number } = {};
+      if (saved) {
+        log = JSON.parse(saved);
+      }
+      const newCount = (log[today] || 0) + 1;
+      log[today] = newCount;
+      localStorage.setItem("jft_study_activity_log", JSON.stringify(log));
+
+      // Update active state triggers
+      setStudiedTodayCount(newCount);
+
+      // Trigger standard count inside current session
+      const currentSessionCount = Number(sessionStorage.getItem("jft_current_session_count") || "0") + 1;
+      sessionStorage.setItem("jft_current_session_count", String(currentSessionCount));
+    } catch (e) {
+      console.error("Failed to record study activity", e);
+    }
+  };
+
   // Update a card progress status
   const handleUpdateStatus = (cardId: string, status: LearningStatus) => {
     setProgress((prev) => ({
       ...prev,
       [cardId]: status,
     }));
+    recordStudyActivity();
   };
 
   // Update a verb progress status
@@ -191,6 +307,7 @@ export default function App() {
       ...prev,
       [verbId]: status,
     }));
+    recordStudyActivity();
   };
 
   // Update an adjective progress status
@@ -199,6 +316,7 @@ export default function App() {
       ...prev,
       [adjId]: status,
     }));
+    recordStudyActivity();
   };
 
   // Update a grammar progress status
@@ -207,6 +325,7 @@ export default function App() {
       ...prev,
       [grammarId]: status,
     }));
+    recordStudyActivity();
   };
 
   // Quick reset metrics
@@ -470,114 +589,221 @@ export default function App() {
             </div>
           </div>
 
-          {/* Quick Metrics Overlay */}
-          <div className="flex items-center gap-4 bg-[#fdfbf7] border border-[#e9e2d7] rounded-2xl p-2 px-3.5 self-start md:self-auto">
-            <div className="flex flex-col">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold text-[#84a98c] tracking-wider uppercase">
-                  Progress Score
-                </span>
-                <span className="text-xs font-bold text-[#52796f]">{percentComplete}%</span>
+          {/* Header Widgets panel */}
+          <div className="flex flex-wrap items-center gap-3 self-start md:self-auto">
+            
+            {/* Widget 1: Pomodoro-style study timer */}
+            <div className="flex items-center gap-2.5 bg-[#fdfbf7] border border-[#e9e2d7] rounded-xl p-1.5 px-3">
+              <div className="flex items-center gap-1.5 shrink-0">
+                <div className={`p-1 rounded-lg ${pomodoroMode === "focus" ? "bg-amber-100 text-[#52796f] animate-pulse" : "bg-[#cad2c5]/40 text-[#52796f]"}`}>
+                  {pomodoroMode === "focus" ? <Brain className="w-3.5 h-3.5" /> : <Coffee className="w-3.5 h-3.5" />}
+                </div>
+                <div>
+                  <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-wider block leading-none">
+                    {pomodoroMode === "focus" ? "Focus" : "Break"}
+                  </span>
+                  <span className="text-xs font-black font-mono text-[#354f52] block mt-0.5">
+                    {(() => {
+                      const mins = Math.floor(pomodoroSeconds / 60);
+                      const secs = pomodoroSeconds % 60;
+                      return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+                    })()}
+                  </span>
+                </div>
               </div>
-              <div className="w-32 bg-[#f0ede6] rounded-full h-1.5 mt-1 overflow-hidden">
-                <div
-                  className="bg-[#52796f] h-1.5 rounded-full transition-all duration-300"
-                  style={{ width: `${percentComplete}%` }}
-                ></div>
+
+              {/* Timer Controls */}
+              <div className="flex items-center gap-1 border-l border-[#e9e2d7] pl-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsTimerRunning(!isTimerRunning)}
+                  className={`p-1 rounded transition cursor-pointer ${isTimerRunning ? "bg-[#354f52] text-white" : "bg-[#f0ede6] text-[#354f52] hover:bg-[#cad2c5]"}`}
+                  title={isTimerRunning ? "Pause timer" : "Start study timer"}
+                >
+                  {isTimerRunning ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsTimerRunning(false);
+                    setPomodoroSeconds(pomodoroMode === "focus" ? 25 * 60 : 5 * 60);
+                  }}
+                  className="p-1 bg-[#f0ede6] hover:bg-[#cad2c5] text-slate-600 rounded cursor-pointer transition"
+                  title="Reset clock"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                </button>
+              </div>
+
+              {/* Total Active Session display */}
+              {totalSessionStudyTime > 0 && (
+                <div className="border-l border-[#e9e2d7] pl-1.5 text-right shrink-0">
+                  <span className="text-[8px] font-bold text-slate-400 block uppercase leading-none">Studied</span>
+                  <span className="text-[10px] font-black text-[#52796f] block mt-0.5">
+                    {(() => {
+                      const mins = Math.floor(totalSessionStudyTime / 60);
+                      const secs = totalSessionStudyTime % 60;
+                      return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+                    })()}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Widget 2: Daily Study Goal */}
+            <div className="flex items-center gap-2 bg-[#fdfbf7] border border-[#e9e2d7] rounded-xl p-1.5 px-3">
+              <div className="p-1 bg-emerald-50 text-[#52796f] rounded-lg">
+                <Award className="w-3.5 h-3.5" />
+              </div>
+              <div className="shrink-0">
+                <div className="flex items-center justify-between gap-1 leading-none">
+                  <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-wider block">Daily Goal</span>
+                  <span className="text-[9px] font-black text-[#52796f]">
+                    {studiedTodayCount}/{dailyGoalToggle}
+                  </span>
+                </div>
+                <div className="w-16 bg-[#f0ede6] rounded-full h-1 mt-1 overflow-hidden">
+                  <div
+                    className="bg-[#52796f] h-1 rounded-full transition-all duration-300"
+                    style={{ width: `${Math.min(Math.round((studiedTodayCount / dailyGoalToggle) * 100), 100)}%` }}
+                  />
+                </div>
               </div>
             </div>
-            <div className="border-l border-[#e9e2d7] pl-3.5 h-8 flex items-center gap-2">
-              <span className="text-sm font-semibold text-[#354f52]">
-                ✔️ {okCount} <span className="text-xs text-[#84a98c]">OK</span>
-              </span>
-              <span className="text-sm font-semibold text-[#354f52] border-l border-[#e9e2d7] pl-2">
-                ❌ {notYetCount} <span className="text-xs text-[#84a98c]">NOT YET</span>
-              </span>
+
+            {/* Original Progress score */}
+            <div className="flex items-center gap-2 bg-[#fdfbf7] border border-[#e9e2d7] rounded-xl p-1.5 px-3">
+              <div className="flex flex-col shrink-0">
+                <div className="flex items-center gap-1 leading-none">
+                  <span className="text-[8px] font-bold text-[#84a98c] tracking-wider uppercase block">
+                    Mastery
+                  </span>
+                  <span className="text-[10px] font-black text-[#52796f]">{percentComplete}%</span>
+                </div>
+                <div className="w-14 bg-[#f0ede6] rounded-full h-1 mt-1 overflow-hidden">
+                  <div
+                    className="bg-[#52796f] h-1 rounded-full transition-all duration-300"
+                    style={{ width: `${percentComplete}%` }}
+                  />
+                </div>
+              </div>
+              <div className="border-l border-[#e9e2d7] pl-1.5 text-[10px] font-extrabold text-[#354f52]">
+                ✔️ {okCount}
+              </div>
             </div>
+
           </div>
         </div>
 
-        {/* Unified single-row tab switcher responsive bar */}
-        <div className="bg-[#fdbbf7]/0 border-t border-[#e9e2d7] px-4 py-3.5">
+        {/* Unified full-width tab switcher responsive bar */}
+        <div className="bg-transparent border-t border-[#e9e2d7] px-4 py-3.5">
           <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex flex-wrap gap-1.5 bg-[#f0ede6]/80 p-1.5 rounded-2xl w-full lg:w-auto shadow-3xs">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 bg-[#f0ede6]/80 p-1.5 rounded-2xl w-full shadow-3xs">
+              
+              {/* Tab 1: JFT Kanji */}
               <button
                 type="button"
                 onClick={() => setActiveTab("learn")}
-                className={`px-4.5 py-2.5 rounded-xl text-xs font-black transition-all duration-200 flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                className={`px-3 py-2.5 rounded-xl text-xs font-black transition-all duration-205 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
                   activeTab === "learn"
-                    ? "bg-white text-[#52796f] shadow-xs border border-[#e9e2d7]/50"
+                    ? "bg-white text-[#52796f] shadow-xs border border-[#52796f]/30"
                     : "text-[#52796f]/70 hover:bg-white/45 hover:text-[#52796f]"
                 }`}
               >
                 <GraduationCap className="w-4 h-4 text-[#52796f]" /> JFT Kanji
               </button>
+
+              {/* Tab 2: Kanji Test */}
               <button
                 type="button"
                 onClick={() => setActiveTab("test")}
-                className={`px-4.5 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                className={`px-3 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
                   activeTab === "test"
-                    ? "bg-white text-[#52796f] shadow-xs border border-[#e9e2d7]/50"
+                    ? "bg-white text-[#52796f] shadow-xs border border-[#52796f]/30"
                     : "text-[#52796f]/70 hover:bg-white/45 hover:text-[#52796f]"
                 }`}
               >
-                <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" /> Kanji Test
+                <Sparkles className="w-4 h-4 text-[#52796f] animate-pulse" /> Kanji Test
               </button>
+
+              {/* Tab 3: Verbs (ක්‍රියාපද) */}
               <button
                 type="button"
                 onClick={() => setActiveTab("verbs")}
-                className={`px-4.5 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                className={`px-3 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
                   activeTab === "verbs"
-                    ? "bg-white text-[#52796f] shadow-xs border border-[#e9e2d7]/50"
+                    ? "bg-white text-[#52796f] shadow-xs border border-[#52796f]/30"
                     : "text-[#52796f]/70 hover:bg-white/45 hover:text-[#52796f]"
                 }`}
               >
-                <Zap className="w-4 h-4 text-orange-500" /> Verbs (ක්‍රියාපද)
+                <Zap className="w-4 h-4 text-orange-500" /> Verbs
               </button>
+
+              {/* Tab 4: Adjectives (විශේෂණ) */}
               <button
                 type="button"
                 onClick={() => setActiveTab("adjectives")}
-                className={`px-4.5 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                className={`px-3 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
                   activeTab === "adjectives"
-                    ? "bg-white text-[#52796f] shadow-xs border border-[#e9e2d7]/50"
+                    ? "bg-white text-[#52796f] shadow-xs border border-[#52796f]/30"
                     : "text-[#52796f]/70 hover:bg-white/45 hover:text-[#52796f]"
                 }`}
               >
-                <Languages className="w-4 h-4 text-teal-600" /> Adjectives (විශේෂණ)
+                <Languages className="w-4 h-4 text-teal-600" /> Adjectives
               </button>
+
+              {/* Tab 5: Grammar (ව්‍යාකරණ)  --> Styled forest green! */}
               <button
                 type="button"
                 onClick={() => setActiveTab("grammar")}
-                className={`px-4.5 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                className={`px-3 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
                   activeTab === "grammar"
-                    ? "bg-white text-[#bc6c25] shadow-xs border border-[#bc6c25]/15"
-                    : "text-[#bc6c25]/75 hover:bg-white/45 hover:text-[#bc6c25]"
-                }`}
-              >
-                <BookOpen className="w-4 h-4 text-[#bc6c25]" /> Grammar (ව්‍යාකරණ)
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab("quiz")}
-                className={`px-4.5 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                  activeTab === "quiz"
-                    ? "bg-white text-[#52796f] shadow-xs border border-[#e9e2d7]/40"
+                    ? "bg-white text-[#52796f] shadow-xs border border-[#52796f]/30"
                     : "text-[#52796f]/70 hover:bg-white/45 hover:text-[#52796f]"
                 }`}
               >
-                <HelpCircle className="w-4 h-4 text-emerald-600" /> JFT Quiz (ප්‍රශ්නාවලිය)
+                <BookOpen className="w-4 h-4 text-[#52796f]" /> Grammar
               </button>
+
+              {/* Tab 6: Dictionary (ශබ්දකෝෂය)  --> Styled forest green! */}
               <button
                 type="button"
                 onClick={() => setActiveTab("dictionary")}
-                className={`px-4.5 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                className={`px-3 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
                   activeTab === "dictionary"
-                    ? "bg-teal-700 text-white shadow-xs"
-                    : "text-teal-800 hover:bg-teal-50"
+                    ? "bg-white text-[#52796f] shadow-xs border border-[#52796f]/30"
+                    : "text-[#52796f]/70 hover:bg-white/45 hover:text-[#52796f]"
                 }`}
               >
-                <BookMarked className="w-4 h-4 text-teal-600" /> Dictionary (ශබ්දකෝෂය)
+                <BookMarked className="w-4 h-4 text-[#52796f]" /> Dictionary
               </button>
+
+              {/* Tab 7: Statistics / Progress (ප්‍රගතිය)  --> Styled forest green! */}
+              <button
+                type="button"
+                onClick={() => setActiveTab("stats")}
+                className={`px-3 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
+                  activeTab === "stats"
+                    ? "bg-white text-[#52796f] shadow-xs border border-[#52796f]/30"
+                    : "text-[#52796f]/70 hover:bg-white/45 hover:text-[#52796f]"
+                }`}
+              >
+                <BarChart4 className="w-4 h-4 text-[#52796f]" /> Progress
+              </button>
+
+              {/* Tab 8: JFT Quiz (ප්‍රශ්නාවලිය) - ALIGNED AT THE VERY END --> Styled forest green! */}
+              <button
+                type="button"
+                onClick={() => setActiveTab("quiz")}
+                className={`px-3 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
+                  activeTab === "quiz"
+                    ? "bg-white text-[#52796f] shadow-xs border border-[#52796f]/30"
+                    : "text-[#52796f]/70 hover:bg-white/45 hover:text-[#52796f]"
+                }`}
+              >
+                <HelpCircle className="w-4 h-4 text-emerald-600 animate-pulse" /> Quiz
+              </button>
+
             </div>
           </div>
         </div>
@@ -1443,6 +1669,20 @@ export default function App() {
         {/* TAB 6: JFT VOCABULARY DICTIONARY */}
         {activeTab === "dictionary" && (
           <DictionaryView />
+        )}
+
+        {/* TAB 7: JFT PROGRESS STATISTICS */}
+        {activeTab === "stats" && (
+          <StatisticsView
+            kanjiCards={cards}
+            kanjiProgress={progress}
+            verbsList={verbs}
+            verbsProgress={verbsProgress}
+            adjectivesList={adjectives}
+            adjectivesProgress={adjectivesProgress}
+            grammarList={grammarList}
+            grammarProgress={grammarProgress}
+          />
         )}
       </main>
 
