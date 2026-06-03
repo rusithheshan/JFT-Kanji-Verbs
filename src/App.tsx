@@ -47,12 +47,22 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"learn" | "test" | "verbs" | "adjectives" | "grammar" | "quiz" | "dictionary" | "stats">("learn");
 
   // Pomodoro study timer states
-  const [pomodoroSeconds, setPomodoroSeconds] = useState(25 * 60); // 25 minutes standard Focus Timer
+  const [focusDurationMinutes, setFocusDurationMinutes] = useState(() => {
+    return Number(localStorage.getItem("jft_focus_duration") || "60");
+  });
+  
+  const [pomodoroSeconds, setPomodoroSeconds] = useState(() => {
+    const mins = Number(localStorage.getItem("jft_focus_duration") || "60");
+    return mins * 60;
+  });
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [pomodoroMode, setPomodoroMode] = useState<"focus" | "break">("focus");
   const [totalSessionStudyTime, setTotalSessionStudyTime] = useState(() => {
     return Number(sessionStorage.getItem("jft_total_session_study_time") || "0");
   });
+
+  // Mobile navigation menu show/hide toggle state
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
   // Daily study progress & targets and sync status
   const [dailyGoalToggle, setDailyGoalToggle] = useState(() => {
@@ -82,7 +92,7 @@ export default function App() {
             setIsTimerRunning(false);
             const nextMode = pomodoroMode === "focus" ? "break" : "focus";
             setPomodoroMode(nextMode);
-            return nextMode === "focus" ? 25 * 60 : 5 * 60;
+            return nextMode === "focus" ? focusDurationMinutes * 60 : 5 * 60;
           }
           return prev - 1;
         });
@@ -102,7 +112,7 @@ export default function App() {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isTimerRunning, pomodoroMode]);
+  }, [isTimerRunning, pomodoroMode, focusDurationMinutes]);
 
   // Sync daily study settings across views and storage
   useEffect(() => {
@@ -153,6 +163,19 @@ export default function App() {
         return JSON.parse(saved);
       } catch (e) {}
     }
+    return {};
+  });
+
+  // SRS (SM-2) algorithm tracking records
+  const [srsRecords, setSrsRecords] = useState<{
+    [key: string]: { repetitions: number; interval: number; efactor: number; incorrectCount: number };
+  }>(() => {
+    try {
+      const saved = localStorage.getItem("jft_kanji_srs");
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {}
     return {};
   });
 
@@ -249,6 +272,10 @@ export default function App() {
     localStorage.setItem("jft_grammar_progress", JSON.stringify(grammarProgress));
   }, [grammarProgress]);
 
+  useEffect(() => {
+    localStorage.setItem("jft_kanji_srs", JSON.stringify(srsRecords));
+  }, [srsRecords]);
+
   // Set up testing/shuffled deck whenever we enter knowledge check mode or cards list updates
   useEffect(() => {
     if (activeTab === "test") {
@@ -257,15 +284,93 @@ export default function App() {
   }, [activeTab]);
 
   const shuffleTestDeck = () => {
+    // 1. Random shuffle all loaded cards first using Fisher-Yates
     const deck = [...cards];
-    // Fisher-Yates Shuffle
     for (let i = deck.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [deck[i], deck[j]] = [deck[j], deck[i]];
     }
+
+    // 2. Sort the shuffled array by SRS-priority index (descending priority)
+    // This biases cards the user struggles with or gets wrong to show up much earlier
+    deck.sort((a, b) => {
+      const srsA = srsRecords[a.id] || { repetitions: 0, interval: 1, efactor: 2.5, incorrectCount: 0 };
+      const srsB = srsRecords[b.id] || { repetitions: 0, interval: 1, efactor: 2.5, incorrectCount: 0 };
+      
+      const statusA = progress[a.id] || "UNSTUDIED";
+      const statusB = progress[b.id] || "UNSTUDIED";
+
+      // Higher weight to problematic status
+      const statusWeightA = statusA === "NOT_YET" ? 150 : statusA === "UNSTUDIED" ? 50 : 0;
+      const statusWeightB = statusB === "NOT_YET" ? 150 : statusB === "UNSTUDIED" ? 50 : 0;
+
+      // Score formula combining user mistakes, lower easiness (efactor), higher weight, and lower repetitions
+      const scoreA = statusWeightA + 
+                     (srsA.incorrectCount * 60) + 
+                     ((3.0 - srsA.efactor) * 80) - 
+                     (srsA.repetitions * 15) - 
+                     (srsA.interval * 5) + 
+                     (Math.random() * 40); // 40pts of random jitter to keep deck shuffling fresh
+
+      const scoreB = statusWeightB + 
+                     (srsB.incorrectCount * 60) + 
+                     ((3.0 - srsB.efactor) * 80) - 
+                     (srsB.repetitions * 15) - 
+                     (srsB.interval * 5) + 
+                     (Math.random() * 40);
+
+      return scoreB - scoreA; // Descending sort
+    });
+
     setTestDeck(deck);
     setCurrentTestIndex(0);
     setIsTestCardRevealed(false);
+  };
+
+  // SM-2 Spaced Repetition core updater
+  const updateKanjiSRS = (cardId: string, gotCorrect: boolean) => {
+    setSrsRecords((prev) => {
+      const current = prev[cardId] || { repetitions: 0, interval: 1, efactor: 2.5, incorrectCount: 0 };
+      let reps = current.repetitions;
+      let interval = current.interval;
+      let ef = current.efactor;
+      let incorrectVal = current.incorrectCount;
+
+      if (gotCorrect) {
+        // SM-2 quality = 5 (Perfect response)
+        const q = 5;
+        if (reps === 0) {
+          interval = 1;
+        } else if (reps === 1) {
+          interval = 6;
+        } else {
+          interval = Math.round(interval * ef);
+        }
+        reps += 1;
+        ef = ef + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02));
+      } else {
+        // SM-2 quality = 1 (Incorrect, easy once seen)
+        const q = 1;
+        reps = 0;
+        interval = 1;
+        incorrectVal += 1;
+        ef = ef + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02));
+      }
+
+      // Bound EF to [1.3, 3.0]
+      if (ef < 1.3) ef = 1.3;
+      if (ef > 3.0) ef = 3.0;
+
+      return {
+        ...prev,
+        [cardId]: {
+          repetitions: reps,
+          interval: interval,
+          efactor: Number(ef.toFixed(3)),
+          incorrectCount: incorrectVal
+        }
+      };
+    });
   };
 
   // Track study interactions in activity log
@@ -293,12 +398,27 @@ export default function App() {
   };
 
   // Update a card progress status
+  const [lastSrsUpdate, setLastSrsUpdate] = useState<{ [key: string]: number }>({});
+
   const handleUpdateStatus = (cardId: string, status: LearningStatus) => {
     setProgress((prev) => ({
       ...prev,
       [cardId]: status,
     }));
     recordStudyActivity();
+
+    // Prevent duplicate updates within a short frame
+    const now = Date.now();
+    if (status !== "UNSTUDIED") {
+      setLastSrsUpdate((prevMap) => {
+        const lastTime = prevMap[cardId] || 0;
+        if (now - lastTime > 600) {
+          updateKanjiSRS(cardId, status === "OK");
+          return { ...prevMap, [cardId]: now };
+        }
+        return prevMap;
+      });
+    }
   };
 
   // Update a verb progress status
@@ -598,17 +718,40 @@ export default function App() {
                 <div className={`p-1 rounded-lg ${pomodoroMode === "focus" ? "bg-amber-100 text-[#52796f] animate-pulse" : "bg-[#cad2c5]/40 text-[#52796f]"}`}>
                   {pomodoroMode === "focus" ? <Brain className="w-3.5 h-3.5" /> : <Coffee className="w-3.5 h-3.5" />}
                 </div>
-                <div>
-                  <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-wider block leading-none">
+                <div className="flex flex-col">
+                  <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-wider block leading-none mb-0.5">
                     {pomodoroMode === "focus" ? "Focus" : "Break"}
                   </span>
-                  <span className="text-xs font-black font-mono text-[#354f52] block mt-0.5">
-                    {(() => {
-                      const mins = Math.floor(pomodoroSeconds / 60);
-                      const secs = pomodoroSeconds % 60;
-                      return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-                    })()}
-                  </span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs font-black font-mono text-[#354f52] block leading-none">
+                      {(() => {
+                        const mins = Math.floor(pomodoroSeconds / 60);
+                        const secs = pomodoroSeconds % 60;
+                        return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+                      })()}
+                    </span>
+                    {pomodoroMode === "focus" && (
+                      <select
+                        value={focusDurationMinutes}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setFocusDurationMinutes(val);
+                          localStorage.setItem("jft_focus_duration", String(val));
+                          if (!isTimerRunning) {
+                            setPomodoroSeconds(val * 60);
+                          }
+                        }}
+                        className="text-[9px] bg-[#f0ede6] hover:bg-[#cad2c5]/40 border-0 rounded-md font-bold text-[#52796f] p-0.5 px-1 ml-1 cursor-pointer outline-none shrink-0"
+                        title="Set focus minutes"
+                      >
+                        {[15, 25, 30, 45, 60, 90, 120].map((m) => (
+                          <option key={m} value={m} className="bg-white text-slate-700 font-bold">
+                            {m}m
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -626,7 +769,7 @@ export default function App() {
                   type="button"
                   onClick={() => {
                     setIsTimerRunning(false);
-                    setPomodoroSeconds(pomodoroMode === "focus" ? 25 * 60 : 5 * 60);
+                    setPomodoroSeconds(pomodoroMode === "focus" ? focusDurationMinutes * 60 : 5 * 60);
                   }}
                   className="p-1 bg-[#f0ede6] hover:bg-[#cad2c5] text-slate-600 rounded cursor-pointer transition"
                   title="Reset clock"
@@ -698,12 +841,32 @@ export default function App() {
         {/* Unified full-width tab switcher responsive bar */}
         <div className="bg-transparent border-t border-[#e9e2d7] px-4 py-3.5">
           <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 bg-[#f0ede6]/80 p-1.5 rounded-2xl w-full shadow-3xs">
+            
+            {/* Mobile View Toggle Bar: Displays active tab cleanly and offers a toggle button */}
+            <div className="md:hidden flex items-center justify-between w-full bg-[#f0ede6]/70 p-2.5 px-4 rounded-2xl border border-[#e9e2d7]/85 shadow-3xs">
+              <span className="text-xs font-black text-[#52796f] uppercase flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                ACTIVE: <span className="underline decoration-wavy decoration-[#84a98c] pr-1">{activeTab.toUpperCase()}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                className="px-4 py-2 bg-[#52796f] hover:bg-[#354f52] text-white rounded-xl text-xs font-black shadow-3xs flex items-center gap-1.5 transition duration-150 cursor-pointer"
+              >
+                {isMobileMenuOpen ? "Hide Menu ✕" : "Show Menu ☰"}
+              </button>
+            </div>
+
+            {/* Switcher Grid: hidden on mobile by default unless isMobileMenuOpen is true */}
+            <div className={`${isMobileMenuOpen ? "grid" : "hidden md:grid"} grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 bg-[#f0ede6]/80 p-1.5 rounded-2xl w-full shadow-3xs transition-all duration-300`}>
               
               {/* Tab 1: JFT Kanji */}
               <button
                 type="button"
-                onClick={() => setActiveTab("learn")}
+                onClick={() => {
+                  setActiveTab("learn");
+                  setIsMobileMenuOpen(false);
+                }}
                 className={`px-3 py-2.5 rounded-xl text-xs font-black transition-all duration-205 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
                   activeTab === "learn"
                     ? "bg-white text-[#52796f] shadow-xs border border-[#52796f]/30"
@@ -716,7 +879,10 @@ export default function App() {
               {/* Tab 2: Kanji Test */}
               <button
                 type="button"
-                onClick={() => setActiveTab("test")}
+                onClick={() => {
+                  setActiveTab("test");
+                  setIsMobileMenuOpen(false);
+                }}
                 className={`px-3 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
                   activeTab === "test"
                     ? "bg-white text-[#52796f] shadow-xs border border-[#52796f]/30"
@@ -729,7 +895,10 @@ export default function App() {
               {/* Tab 3: Verbs (ක්‍රියාපද) */}
               <button
                 type="button"
-                onClick={() => setActiveTab("verbs")}
+                onClick={() => {
+                  setActiveTab("verbs");
+                  setIsMobileMenuOpen(false);
+                }}
                 className={`px-3 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
                   activeTab === "verbs"
                     ? "bg-white text-[#52796f] shadow-xs border border-[#52796f]/30"
@@ -742,7 +911,10 @@ export default function App() {
               {/* Tab 4: Adjectives (විශේෂණ) */}
               <button
                 type="button"
-                onClick={() => setActiveTab("adjectives")}
+                onClick={() => {
+                  setActiveTab("adjectives");
+                  setIsMobileMenuOpen(false);
+                }}
                 className={`px-3 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
                   activeTab === "adjectives"
                     ? "bg-white text-[#52796f] shadow-xs border border-[#52796f]/30"
@@ -755,7 +927,10 @@ export default function App() {
               {/* Tab 5: Grammar (ව්‍යාකරණ)  --> Styled forest green! */}
               <button
                 type="button"
-                onClick={() => setActiveTab("grammar")}
+                onClick={() => {
+                  setActiveTab("grammar");
+                  setIsMobileMenuOpen(false);
+                }}
                 className={`px-3 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
                   activeTab === "grammar"
                     ? "bg-white text-[#52796f] shadow-xs border border-[#52796f]/30"
@@ -768,7 +943,10 @@ export default function App() {
               {/* Tab 6: Dictionary (ශබ්දකෝෂය)  --> Styled forest green! */}
               <button
                 type="button"
-                onClick={() => setActiveTab("dictionary")}
+                onClick={() => {
+                  setActiveTab("dictionary");
+                  setIsMobileMenuOpen(false);
+                }}
                 className={`px-3 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
                   activeTab === "dictionary"
                     ? "bg-white text-[#52796f] shadow-xs border border-[#52796f]/30"
@@ -781,7 +959,10 @@ export default function App() {
               {/* Tab 7: Statistics / Progress (ප්‍රගතිය)  --> Styled forest green! */}
               <button
                 type="button"
-                onClick={() => setActiveTab("stats")}
+                onClick={() => {
+                  setActiveTab("stats");
+                  setIsMobileMenuOpen(false);
+                }}
                 className={`px-3 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
                   activeTab === "stats"
                     ? "bg-white text-[#52796f] shadow-xs border border-[#52796f]/30"
@@ -794,7 +975,10 @@ export default function App() {
               {/* Tab 8: JFT Quiz (ප්‍රශ්නාවලිය) - ALIGNED AT THE VERY END --> Styled forest green! */}
               <button
                 type="button"
-                onClick={() => setActiveTab("quiz")}
+                onClick={() => {
+                  setActiveTab("quiz");
+                  setIsMobileMenuOpen(false);
+                }}
                 className={`px-3 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
                   activeTab === "quiz"
                     ? "bg-white text-[#52796f] shadow-xs border border-[#52796f]/30"
