@@ -38,3 +38,15 @@ export interface CardState {
 export interface UserProgress {
   [cardId: string]: LearningStatus;
 }
+
+export interface DictionaryEntry {
+  id: string;
+  romaji: string;
+  kanji: string;
+  hiragana: string;
+  onyomi: string;
+  kunyomi: string;
+  sinhalaMeaning: string;
+  englishMeaning: string;
+  searchKeywords?: string[];
+}

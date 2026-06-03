@@ -26,6 +26,20 @@ async function startServer() {
       })
     : null;
 
+  // Helper to handle and simplify Gemini API keys errors (e.g. leaked or suspended keys)
+  function handleGeminiError(err: any): string {
+    const errMsg = err && typeof err === "object" ? JSON.stringify(err) + " " + (err.message || "") : String(err);
+    if (
+      errMsg.toLowerCase().includes("leaked") ||
+      errMsg.toLowerCase().includes("permission_denied") ||
+      errMsg.toLowerCase().includes("403") ||
+      errMsg.toLowerCase().includes("unauthorized")
+    ) {
+      return "JFT Study App: Your Google Gemini API key has been reported as suspended or leaked. Please view AI Studio Settings on the top right to verify or update your GEMINI_API_KEY. All preloaded JFT course options, quizzes, vocabulary directories, and dictionaries remain completely available offline!";
+    }
+    return err.message || "An unexpected error occurred in JFT AI service.";
+  }
+
   // API endpoint to parse the JFT Kanji PDF using the Gemini API
   app.post("/api/parse-pdf", async (req, res) => {
     try {
@@ -111,7 +125,7 @@ Ensure your output is a strictly formatted JSON array containing all processed e
       return res.json({ cards: formattedCards });
     } catch (err: any) {
       console.error("PDF Parsing Error:", err);
-      return res.status(500).json({ error: err.message || "Failed to process and analyze the PDF file." });
+      return res.status(500).json({ error: handleGeminiError(err) });
     }
   });
 
@@ -178,7 +192,7 @@ Exposures must match this schema strictly:
       return res.json({ id: `ai_${Date.now()}`, ...cardDetails });
     } catch (err: any) {
       console.error("Single Generation Error:", err);
-      return res.status(500).json({ error: err.message || "Failed to generate custom card." });
+      return res.status(500).json({ error: handleGeminiError(err) });
     }
   });
 
@@ -267,7 +281,7 @@ Provide the response as a valid JFTParagraph JSON object matching this schema:
       return res.json(parsedData);
     } catch (err: any) {
       console.error("Paragraph Generation Error:", err);
-      return res.status(500).json({ error: err.message || "Failed to generate dynamic paragraph." });
+      return res.status(500).json({ error: handleGeminiError(err) });
     }
   });
 
@@ -392,7 +406,7 @@ Ensure the output is valid JSON only, without any markdown fence wrappers.
       return res.json(result);
     } catch (err: any) {
       console.error("Realtime Translation Error:", err);
-      return res.status(500).json({ error: err.message || "Failed to analyze and translate the input text." });
+      return res.status(500).json({ error: handleGeminiError(err) });
     }
   });
 

@@ -31,11 +31,11 @@ import QuizView from "./components/QuizView";
 import { PRELOADED_GRAMMAR } from "./data/preloadedGrammar";
 import { JFTGrammar } from "./types";
 import GrammarCardView from "./components/GrammarCardView";
-import RealTimeTranslatorView from "./components/RealTimeTranslatorView";
+import DictionaryView from "./components/DictionaryView";
 
 export default function App() {
   // Navigation tabs
-  const [activeTab, setActiveTab] = useState<"learn" | "test" | "verbs" | "adjectives" | "grammar" | "quiz" | "translator">("learn");
+  const [activeTab, setActiveTab] = useState<"learn" | "test" | "verbs" | "adjectives" | "grammar" | "quiz" | "dictionary">("learn");
 
   // Main Kanji Deck State (Preloaded base cards + any PDF parsed results + custom AI generated ones)
   const [cards, setCards] = useState<KanjiCard[]>(() => {
@@ -496,107 +496,96 @@ export default function App() {
           </div>
         </div>
 
-        {/* Global tab Switcher row */}
-        <div className="bg-[#fdbbf7]/0 border-t border-[#e9e2d7]">
-          <div className="max-w-7xl mx-auto px-4 py-3 flex justify-start">
-            <div className="flex gap-1 bg-[#f0ede6] p-1 rounded-full overflow-x-auto scrollbar-none">
-              <button
-                onClick={() => setActiveTab("learn")}
-                className={`px-6 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${
-                  activeTab === "learn"
-                    ? "bg-white text-[#52796f] shadow-xs font-bold"
-                    : "text-[#84a98c] hover:bg-white/50"
-                }`}
-              >
-                <GraduationCap className="w-4 h-4" /> Learn JFT Kanji
-              </button>
-              <button
-                onClick={() => setActiveTab("test")}
-                className={`px-6 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${
-                  activeTab === "test"
-                    ? "bg-white text-[#52796f] shadow-xs font-bold"
-                    : "text-[#84a98c] hover:bg-white/50"
-                }`}
-              >
-                <Sparkles className="w-4 h-4" /> Check Kanji Knowledge
-              </button>
-              <button
-                onClick={() => setActiveTab("verbs")}
-                className={`px-6 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${
-                  activeTab === "verbs"
-                    ? "bg-white text-[#52796f] shadow-xs font-bold"
-                    : "text-[#84a98c] hover:bg-white/50"
-                }`}
-              >
-                <Zap className="w-4 h-4" /> Learn Verbs (ක්‍රියාපද)
-              </button>
-              <button
-                onClick={() => setActiveTab("adjectives")}
-                className={`px-6 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${
-                  activeTab === "adjectives"
-                    ? "bg-white text-[#52796f] shadow-xs font-bold"
-                    : "text-[#84a98c] hover:bg-white/50"
-                }`}
-              >
-                <Languages className="w-4 h-4" /> Learn Adjectives (විශේෂණ)
-              </button>
-              <button
-                onClick={() => setActiveTab("grammar")}
-                className={`px-6 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${
-                  activeTab === "grammar"
-                    ? "bg-white text-[#52796f] shadow-xs font-bold"
-                    : "text-[#84a98c] hover:bg-white/50"
-                }`}
-              >
-                <BookOpen className="w-4 h-4 font-black text-[#bc6c25]" /> Learn Grammar (ව්‍යාකරණ)
-              </button>
-              <button
-                onClick={() => setActiveTab("quiz")}
-                className={`px-6 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${
-                  activeTab === "quiz"
-                    ? "bg-white text-[#52796f] shadow-xs font-bold"
-                    : "text-[#84a98c] hover:bg-white/50"
-                }`}
-              >
-                <HelpCircle className="w-4 h-4" /> Super Quiz (ප්‍රශ්නාවලිය)
-              </button>
+        {/* Global tab Switcher row split beautifully into 2 rows to fit smaller screens and make spacing clean */}
+        <div className="bg-[#fdbbf7]/0 border-t border-[#e9e2d7] px-4 py-4">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex flex-col gap-2.5 w-full">
+              {/* Row 1: Primary core study cards (4 items) */}
+              <div className="flex flex-wrap gap-1.5 bg-[#f0ede6]/70 p-1.5 rounded-2xl w-fit">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("learn")}
+                  className={`px-5 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                    activeTab === "learn"
+                      ? "bg-white text-[#52796f] shadow-xs font-black border border-[#e9e2d7]/50"
+                      : "text-[#84a98c] hover:bg-white/40 hover:text-[#52796f]"
+                  }`}
+                >
+                  <GraduationCap className="w-3.5 h-3.5 text-[#52796f]" /> JFT Kanji
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("test")}
+                  className={`px-5 py-2 rounded-xl text-xs font-bold transition-all duration-150 flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                    activeTab === "test"
+                      ? "bg-white text-[#52796f] shadow-xs font-black border border-[#e9e2d7]/50"
+                      : "text-[#84a98c] hover:bg-white/40 hover:text-[#52796f]"
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse" /> Check Kanji Knowledge
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("verbs")}
+                  className={`px-5 py-2 rounded-xl text-xs font-bold transition-all duration-150 flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                    activeTab === "verbs"
+                      ? "bg-white text-[#52796f] shadow-xs font-black border border-[#e9e2d7]/50"
+                      : "text-[#84a98c] hover:bg-white/40 hover:text-[#52796f]"
+                  }`}
+                >
+                  <Zap className="w-3.5 h-3.5 text-orange-500" /> Verbs (ක්‍රියාපද)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("adjectives")}
+                  className={`px-5 py-2 rounded-xl text-xs font-bold transition-all duration-150 flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                    activeTab === "adjectives"
+                      ? "bg-white text-[#52796f] shadow-xs font-black border border-[#e9e2d7]/50"
+                      : "text-[#84a98c] hover:bg-white/40 hover:text-[#52796f]"
+                  }`}
+                >
+                  <Languages className="w-3.5 h-3.5 text-teal-600" /> Adjectives (විශේෂණ)
+                </button>
+              </div>
+
+              {/* Row 2: Secondary grammar context, interactive quiz and JFT Book Dictionary (3 items) */}
+              <div className="flex flex-wrap gap-1.5 bg-[#ece2d0]/50 p-1.5 rounded-2xl w-fit border border-[#e9e2d7]/40 shadow-3xs">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("grammar")}
+                  className={`px-5 py-2 rounded-xl text-xs font-bold transition-all duration-150 flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                    activeTab === "grammar"
+                      ? "bg-white text-[#bc6c25] shadow-xs font-black border border-[#bc6c25]/15"
+                      : "text-[#bc6c25]/75 hover:bg-white/40 hover:text-[#bc6c25]"
+                  }`}
+                >
+                  <BookOpen className="w-3.5 h-3.5 text-[#bc6c25]" /> Learn Grammar (ව්‍යාකරණ)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("quiz")}
+                  className={`px-5 py-2 rounded-xl text-xs font-bold transition-all duration-150 flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                    activeTab === "quiz"
+                      ? "bg-white text-[#52796f] shadow-xs font-black border border-[#e9e2d7]/40"
+                      : "text-[#84a98c] hover:bg-white/40 hover:text-[#52796f]"
+                  }`}
+                >
+                  <HelpCircle className="w-3.5 h-3.5 text-emerald-600" /> Super Quiz (ප්‍රශ්නාවලිය)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("dictionary")}
+                  className={`px-5 py-2 rounded-xl text-xs font-black transition-all duration-150 flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                    activeTab === "dictionary"
+                      ? "bg-teal-700 text-white shadow-xs font-black"
+                      : "text-teal-800 hover:bg-teal-50"
+                  }`}
+                >
+                  <Languages className="w-3.5 h-3.5 text-teal-600" /> JFT Dictionary (ශබ්දකෝෂය)
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-
-        {/* Real-time Translator Header Banner Action Bar */}
-        <div className="max-w-7xl mx-auto px-4 pt-1 pb-3">
-          <button
-            onClick={() => setActiveTab("translator")}
-            className={`w-full py-4 px-6 rounded-[22px] flex flex-col sm:flex-row sm:items-center justify-between text-left transition-all duration-300 border-2 select-none gap-4 cursor-pointer ${
-              activeTab === "translator"
-                ? "bg-teal-700 text-white border-teal-700 shadow-sm scale-102"
-                : "bg-teal-50/15 text-teal-800 border-teal-100 hover:bg-teal-50/40 hover:border-teal-300"
-            }`}
-          >
-            <div className="flex items-center gap-3.5">
-              <div className={`p-2.5 rounded-xl shrink-0 ${activeTab === "translator" ? "bg-white/15 text-white" : "bg-teal-100/50 text-teal-800"}`}>
-                <Languages className="w-5 h-5" />
-              </div>
-              <div className="space-y-0.5">
-                <span className={`text-[9px] font-black uppercase tracking-widest block ${activeTab === "translator" ? "text-teal-100" : "text-teal-700"}`}>
-                  Real-Time AI Camera, Photo & Text Translator • සජීවී AI කැමරා පරිවර්තකය
-                </span>
-                <span className="text-sm font-black block">
-                  ස්මාර්ට් පරිවර්තක මෙවලම (Smart Translate & Particle Anatomy Analyzer)
-                </span>
-              </div>
-            </div>
-            <div className={`inline-flex items-center gap-1.5 text-xs font-black px-4.5 py-2.5 rounded-xl border shrink-0 transition-all ${
-              activeTab === "translator" 
-                ? "bg-white text-teal-800 border-white font-extrabold shadow-2xs" 
-                : "bg-teal-750 text-white border-teal-700 hover:bg-teal-800"
-            }`}
-            style={activeTab !== "translator" ? { backgroundColor: "#0f766e" } : undefined}
-            >
-              {activeTab === "translator" ? "✔️ දැනට ක්‍රියාකාරීයි (ACTIVE NOW)" : "📷 පරිවර්තකයට පිවිසෙන්න (OPEN TRANSLATOR)"}
-            </div>
-          </button>
         </div>
       </header>
 
@@ -1457,9 +1446,9 @@ export default function App() {
           />
         )}
 
-        {/* TAB 6: REAL-TIME SCAN AND CAMERA TRANSLATOR */}
-        {activeTab === "translator" && (
-          <RealTimeTranslatorView />
+        {/* TAB 6: JFT VOCABULARY DICTIONARY */}
+        {activeTab === "dictionary" && (
+          <DictionaryView />
         )}
       </main>
 
