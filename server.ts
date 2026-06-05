@@ -295,6 +295,83 @@ Ensure your output is a strictly formatted JSON array containing all processed e
     }
   });
 
+  // Securely verify Google-provided User ID Tokens sent from the frontend client
+  app.post("/api/auth/google", async (req, res) => {
+    try {
+      const { idToken, targetExam = "JFT-Basic" } = req.body;
+      if (!idToken) {
+        return res.status(400).json({ error: "Google Identity token is required." });
+      }
+
+      // Securely call Google Token Verification Endpoint
+      const response = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
+      if (!response.ok) {
+        return res.status(400).json({ error: "Invalid Google ID token signature or expired." });
+      }
+
+      const payload = await response.json() as {
+        email?: string;
+        name?: string;
+        picture?: string;
+        sub?: string;
+        aud?: string;
+      };
+
+      if (!payload.email) {
+        return res.status(400).json({ error: "Google account does not expose a fallback email address." });
+      }
+
+      const googleEmail = payload.email.trim().toLowerCase();
+      const list = getProfilesSafe();
+      let matchedIdx = list.findIndex((u: any) => u.email.toLowerCase() === googleEmail);
+
+      const now = new Date().toISOString();
+
+      if (matchedIdx >= 0) {
+        // Log in to existing matched social profile
+        const matched = list[matchedIdx];
+        matched.username = payload.name || matched.username;
+        matched.avatar = payload.picture || matched.avatar || "👤";
+        matched.updatedAt = now;
+        saveProfilesSafe(list);
+
+        const loggedProfile = { ...matched };
+        delete (loggedProfile as any).password;
+        return res.json({ success: true, profile: loggedProfile });
+      } else {
+        // Register a new native user profile with verified Google metadata
+        const newProfile = {
+          email: googleEmail,
+          password: "", // Social profiles don't enforce default password verification
+          username: payload.name || "Google Learner",
+          avatar: payload.picture || "👤",
+          targetExam: targetExam || "JFT-Basic",
+          kanjiProgress: 0,
+          verbsProgress: 0,
+          adjectivesProgress: 0,
+          grammarProgress: 0,
+          kanjiProgressMap: {},
+          verbsProgressMap: {},
+          adjectivesProgressMap: {},
+          grammarProgressMap: {},
+          totalProgress: 0,
+          updatedAt: now,
+          joinedAt: now
+        };
+
+        list.push(newProfile);
+        saveProfilesSafe(list);
+
+        const savedProfile = { ...newProfile };
+        delete (savedProfile as any).password;
+        return res.json({ success: true, profile: savedProfile });
+      }
+    } catch (err) {
+      console.error("Backend Google token verification error:", err);
+      return res.status(500).json({ error: "Could not safely verify Google credentials on the server." });
+    }
+  });
+
   // Login existing user
   app.post("/api/auth/login", (req, res) => {
     try {

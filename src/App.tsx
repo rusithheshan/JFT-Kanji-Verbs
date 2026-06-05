@@ -663,6 +663,92 @@ export default function App() {
   const [regSuccessMessage, setRegSuccessMessage] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
 
+  // Google credential handoff handler
+  const handleGoogleCredentialResponse = async (response: any) => {
+    try {
+      setAuthError(null);
+      const res = await fetch("/api/auth/google", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken: response.credential, targetExam: "JFT-Basic" }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setUserProfile(data.profile);
+        await loadProfileAndProgressFromServer(data.profile.email);
+      } else {
+        throw new Error(data.error || "Server token verification failed");
+      }
+    } catch (err) {
+      console.warn("Backend Google verification failed, falling back to local client-side JWT decode:", err);
+      // Fallback decode local details so it is static/offline hosting safe e.g. Netlify
+      const decoded = parseJwt(response.credential);
+      if (decoded && decoded.email) {
+        const fallbackProfile = {
+          username: decoded.name || decoded.email.split("@")[0],
+          email: decoded.email,
+          avatar: decoded.picture || "👤",
+          targetExam: "JFT-Basic",
+          joinedAt: new Date().toISOString(),
+          kanjiProgress: 0,
+          verbsProgress: 0,
+          adjectivesProgress: 0,
+          grammarProgress: 0,
+          kanjiProgressMap: {},
+          verbsProgressMap: {},
+          adjectivesProgressMap: {},
+          grammarProgressMap: {},
+          totalProgress: 0,
+        };
+        setUserProfile(fallbackProfile);
+      } else {
+        setAuthError("Google credentials could not be parsed safely.");
+      }
+    }
+  };
+
+  // Load official Google Identity Services client script and initialize
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+      try {
+        const clientID = (import.meta as any).env.VITE_GOOGLE_CLIENT_ID || "564478201201-fakeclientid10239018.apps.googleusercontent.com";
+        const g = (window as any).google;
+        if (g && g.accounts && g.accounts.id) {
+          g.accounts.id.initialize({
+            client_id: clientID,
+            callback: handleGoogleCredentialResponse,
+            auto_select: false,
+          });
+
+          // Draw the native google login buttons if target containers exist
+          const targetBtn = document.getElementById("google-signin-btn-target");
+          if (targetBtn) {
+            g.accounts.id.renderButton(targetBtn, {
+              theme: "outline",
+              size: "large",
+              width: 320,
+              text: "continue_with",
+              shape: "pill",
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Google button initialization failure:", err);
+      }
+    };
+    document.body.appendChild(script);
+
+    return () => {
+      try {
+        document.body.removeChild(script);
+      } catch (e) {}
+    };
+  }, [userProfile]); // re-evaluate when user profile is null to draw button
+
   // Handle backend initialization
   useEffect(() => {
     fetchLeaderboard();
@@ -1230,6 +1316,24 @@ export default function App() {
               🚀 ඉගෙනුම ආරම්භ කරන්න (Start Learning)
             </button>
           </form>
+
+          {/* Secure Google Account Section */}
+          <div className="relative py-1">
+            <div className="absolute inset-0 flex items-center" aria-hidden="true">
+              <div className="w-full border-t border-[#e9e2d7]" />
+            </div>
+            <div className="relative flex justify-center text-xs">
+              <span className="bg-white px-3 font-semibold text-[#84a98c]">නැතහොත් (Or Secure Account)</span>
+            </div>
+          </div>
+
+          {/* Google Sign-In button container */}
+          <div className="flex flex-col items-center justify-center space-y-2.5">
+            <div id="google-signin-btn-target" className="overflow-hidden rounded-xl max-w-full flex justify-center"></div>
+            <p className="text-[9px] text-[#84a98c] font-semibold text-center leading-normal max-w-xs">
+              Google ගිණුම මගින් ආරක්‍ෂිතව ඇතුළු වී ඔබගේ ලකුණු සහ ප්‍රගතිය (Active SRS State) ස්වයංක්‍රීයව සුරක්ෂිත කරන්න.
+            </p>
+          </div>
 
           {/* Error messages if any */}
           {authError && (
