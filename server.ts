@@ -196,6 +196,54 @@ Exposures must match this schema strictly:
     }
   });
 
+  // API endpoint to generate a mnemonic image for a Kanji character
+  app.post("/api/generate-mnemonic-image", async (req, res) => {
+    try {
+      if (!ai) {
+        return res.status(500).json({
+          error: "Gemini API Key is not configured on the server. Please configure GEMINI_API_KEY under Settings > Secrets.",
+        });
+      }
+
+      const { kanji, englishMeaning, sinhalaMeaning } = req.body;
+      if (!kanji) {
+        return res.status(400).json({ error: "Missing 'kanji' to generate mnemonic for." });
+      }
+
+      const prompt = `A clear, beautiful, minimalist visual illustration and sketch acting as a memorable mnemonic drawing to remember the Japanese Kanji character: '${kanji}' which means '${englishMeaning || "unknown"}' (${sinhalaMeaning || "not specified"}). Show how the shape of the kanji character lines relate to the physical object or concept, creating a very helpful, cute, clean and easily recognizable memory link. Clean white background, minimalist cozy watercolor sketch style.`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash-image",
+        contents: prompt,
+        config: {
+          imageConfig: {
+            aspectRatio: "1:1",
+          },
+        },
+      });
+
+      let base64Image = "";
+      if (response.candidates && response.candidates[0]?.content?.parts) {
+        for (const part of response.candidates[0].content.parts) {
+          if (part.inlineData && part.inlineData.data) {
+            base64Image = part.inlineData.data;
+            break;
+          }
+        }
+      }
+
+      if (!base64Image) {
+        throw new Error("No inline raw image data found in Gemini response parts. Ensure the Gemini API key has access to image models.");
+      }
+
+      const imageUrl = `data:image/png;base64,${base64Image}`;
+      return res.json({ imageUrl });
+    } catch (err: any) {
+      console.error("Mnemonic image generation error:", err);
+      return res.status(500).json({ error: handleGeminiError(err) });
+    }
+  });
+
   // API endpoint to generate custom paragraph or conversation based on user's selected progress filters
   app.post("/api/generate-paragraph", async (req, res) => {
     try {

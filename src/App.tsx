@@ -1,4 +1,4 @@
-import { useState, useEffect, FormEvent, ChangeEvent } from "react";
+import { useState, useEffect, FormEvent, ChangeEvent, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   BookOpen,
@@ -26,7 +26,9 @@ import {
   Pause,
   Award,
   Coffee,
-  Brain
+  Brain,
+  Sun,
+  Moon
 } from "lucide-react";
 import { PRELOADED_KANJI, KanjiCard } from "./data/preloadedKanji";
 import { LearningStatus, UserProgress } from "./types";
@@ -41,10 +43,28 @@ import { JFTGrammar } from "./types";
 import GrammarCardView from "./components/GrammarCardView";
 import DictionaryView from "./components/DictionaryView";
 import StatisticsView from "./components/StatisticsView";
+import AlphabetView from "./components/AlphabetView";
 
 export default function App() {
   // Navigation tabs
-  const [activeTab, setActiveTab] = useState<"learn" | "test" | "verbs" | "adjectives" | "grammar" | "quiz" | "dictionary" | "stats">("learn");
+  const [activeTab, setActiveTab] = useState<"alphabet" | "learn" | "test" | "verbs" | "adjectives" | "grammar" | "quiz" | "dictionary" | "stats">("alphabet");
+
+  // Supporting unified nested Study vs Test mode for JFT Kanji (matching Verbs/Adjectives)
+  const [kanjiViewMode, setKanjiViewMode] = useState<"learn" | "test">("learn");
+
+  // Always use cozy light theme based on user requirements "Kalin thibba widiya thamai set wenne"
+  const theme = "light";
+
+  // Verbs and Adjectives course view formats (learn lists vs. SRS test decks)
+  const [verbsViewMode, setVerbsViewMode] = useState<"learn" | "test">("learn");
+  const [verbTestDeck, setVerbTestDeck] = useState<JFTVerb[]>([]);
+  const [currentVerbTestIndex, setCurrentVerbTestIndex] = useState(0);
+  const [isVerbTestCardRevealed, setIsVerbTestCardRevealed] = useState(false);
+
+  const [adjectivesViewMode, setAdjectivesViewMode] = useState<"learn" | "test">("learn");
+  const [adjTestDeck, setAdjTestDeck] = useState<JFTAdjective[]>([]);
+  const [currentAdjTestIndex, setCurrentAdjTestIndex] = useState(0);
+  const [isAdjTestCardRevealed, setIsAdjTestCardRevealed] = useState(false);
 
   // Pomodoro study timer states
   const [focusDurationMinutes, setFocusDurationMinutes] = useState(() => {
@@ -182,6 +202,7 @@ export default function App() {
   // Search, Filter states
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<"ALL" | "NOT_YET" | "OK">("ALL");
+  const [visibleKanjiCount, setVisibleKanjiCount] = useState(16);
 
   // Focus Modes / Focus Overlay
   const [focusedCardIndex, setFocusedCardIndex] = useState<number | null>(null);
@@ -216,6 +237,7 @@ export default function App() {
   const [verbsSearchQuery, setVerbsSearchQuery] = useState("");
   const [activeVerbsFilter, setActiveVerbsFilter] = useState<"ALL" | "NOT_YET" | "OK">("ALL");
   const [verbsPracticePerspective, setVerbsPracticePerspective] = useState<"sinhala" | "japanese">("japanese");
+  const [visibleVerbsCount, setVisibleVerbsCount] = useState(16);
 
   // JFT Adjectives State
   const [adjectives] = useState<JFTAdjective[]>(PRELOADED_ADJECTIVES);
@@ -251,6 +273,14 @@ export default function App() {
   const [grammarSearchQuery, setGrammarSearchQuery] = useState("");
   const [activeGrammarFilter, setActiveGrammarFilter] = useState<"ALL" | "NOT_YET" | "OK">("ALL");
 
+  useEffect(() => {
+    setVisibleKanjiCount(16);
+  }, [searchQuery, activeFilter, activeTab]);
+
+  useEffect(() => {
+    setVisibleVerbsCount(16);
+  }, [verbsSearchQuery, activeVerbsFilter, activeTab]);
+
   // Persist State Changes
   useEffect(() => {
     localStorage.setItem("jft_kanji_cards", JSON.stringify(cards));
@@ -278,10 +308,10 @@ export default function App() {
 
   // Set up testing/shuffled deck whenever we enter knowledge check mode or cards list updates
   useEffect(() => {
-    if (activeTab === "test") {
+    if (activeTab === "test" || (activeTab === "learn" && kanjiViewMode === "test")) {
       shuffleTestDeck();
     }
-  }, [activeTab]);
+  }, [activeTab, kanjiViewMode]);
 
   const shuffleTestDeck = () => {
     // 1. Random shuffle all loaded cards first using Fisher-Yates
@@ -327,8 +357,100 @@ export default function App() {
     setIsTestCardRevealed(false);
   };
 
+  // Set up testing/shuffled deck whenever we enter verbs test mode
+  useEffect(() => {
+    if (activeTab === "verbs" && verbsViewMode === "test") {
+      shuffleVerbTestDeck();
+    }
+  }, [activeTab, verbsViewMode]);
+
+  const shuffleVerbTestDeck = () => {
+    const deck = [...verbs];
+    for (let i = deck.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+
+    deck.sort((a, b) => {
+      const srsA = srsRecords[a.id] || { repetitions: 0, interval: 1, efactor: 2.5, incorrectCount: 0 };
+      const srsB = srsRecords[b.id] || { repetitions: 0, interval: 1, efactor: 2.5, incorrectCount: 0 };
+      
+      const statusA = verbsProgress[a.id] || "UNSTUDIED";
+      const statusB = verbsProgress[b.id] || "UNSTUDIED";
+
+      const statusWeightA = statusA === "NOT_YET" ? 150 : statusA === "UNSTUDIED" ? 50 : 0;
+      const statusWeightB = statusB === "NOT_YET" ? 150 : statusB === "UNSTUDIED" ? 50 : 0;
+
+      const scoreA = statusWeightA + 
+                     (srsA.incorrectCount * 60) + 
+                     ((3.0 - srsA.efactor) * 80) - 
+                     (srsA.repetitions * 15) - 
+                     (srsA.interval * 5) + 
+                     (Math.random() * 40);
+
+      const scoreB = statusWeightB + 
+                     (srsB.incorrectCount * 60) + 
+                     ((3.0 - srsB.efactor) * 80) - 
+                     (srsB.repetitions * 15) - 
+                     (srsB.interval * 5) + 
+                     (Math.random() * 40);
+
+      return scoreB - scoreA;
+    });
+
+    setVerbTestDeck(deck);
+    setCurrentVerbTestIndex(0);
+    setIsVerbTestCardRevealed(false);
+  };
+
+  // Set up testing/shuffled deck whenever we enter adjectives test mode
+  useEffect(() => {
+    if (activeTab === "adjectives" && adjectivesViewMode === "test") {
+      shuffleAdjTestDeck();
+    }
+  }, [activeTab, adjectivesViewMode]);
+
+  const shuffleAdjTestDeck = () => {
+    const deck = [...adjectives];
+    for (let i = deck.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+
+    deck.sort((a, b) => {
+      const srsA = srsRecords[a.id] || { repetitions: 0, interval: 1, efactor: 2.5, incorrectCount: 0 };
+      const srsB = srsRecords[b.id] || { repetitions: 0, interval: 1, efactor: 2.5, incorrectCount: 0 };
+      
+      const statusA = adjectivesProgress[a.id] || "UNSTUDIED";
+      const statusB = adjectivesProgress[b.id] || "UNSTUDIED";
+
+      const statusWeightA = statusA === "NOT_YET" ? 150 : statusA === "UNSTUDIED" ? 50 : 0;
+      const statusWeightB = statusB === "NOT_YET" ? 150 : statusB === "UNSTUDIED" ? 50 : 0;
+
+      const scoreA = statusWeightA + 
+                     (srsA.incorrectCount * 60) + 
+                     ((3.0 - srsA.efactor) * 80) - 
+                     (srsA.repetitions * 15) - 
+                     (srsA.interval * 5) + 
+                     (Math.random() * 40);
+
+      const scoreB = statusWeightB + 
+                     (srsB.incorrectCount * 60) + 
+                     ((3.0 - srsB.efactor) * 80) - 
+                     (srsB.repetitions * 15) - 
+                     (srsB.interval * 5) + 
+                     (Math.random() * 40);
+
+      return scoreB - scoreA;
+    });
+
+    setAdjTestDeck(deck);
+    setCurrentAdjTestIndex(0);
+    setIsAdjTestCardRevealed(false);
+  };
+
   // SM-2 Spaced Repetition core updater
-  const updateKanjiSRS = (cardId: string, gotCorrect: boolean) => {
+  const updateCardSRS = (cardId: string, gotCorrect: boolean) => {
     setSrsRecords((prev) => {
       const current = prev[cardId] || { repetitions: 0, interval: 1, efactor: 2.5, incorrectCount: 0 };
       let reps = current.repetitions;
@@ -337,7 +459,6 @@ export default function App() {
       let incorrectVal = current.incorrectCount;
 
       if (gotCorrect) {
-        // SM-2 quality = 5 (Perfect response)
         const q = 5;
         if (reps === 0) {
           interval = 1;
@@ -349,7 +470,6 @@ export default function App() {
         reps += 1;
         ef = ef + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02));
       } else {
-        // SM-2 quality = 1 (Incorrect, easy once seen)
         const q = 1;
         reps = 0;
         interval = 1;
@@ -357,7 +477,6 @@ export default function App() {
         ef = ef + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02));
       }
 
-      // Bound EF to [1.3, 3.0]
       if (ef < 1.3) ef = 1.3;
       if (ef > 3.0) ef = 3.0;
 
@@ -413,7 +532,7 @@ export default function App() {
       setLastSrsUpdate((prevMap) => {
         const lastTime = prevMap[cardId] || 0;
         if (now - lastTime > 600) {
-          updateKanjiSRS(cardId, status === "OK");
+          updateCardSRS(cardId, status === "OK");
           return { ...prevMap, [cardId]: now };
         }
         return prevMap;
@@ -428,6 +547,19 @@ export default function App() {
       [verbId]: status,
     }));
     recordStudyActivity();
+
+    // Prevent duplicate updates within a short frame
+    const now = Date.now();
+    if (status !== "UNSTUDIED") {
+      setLastSrsUpdate((prevMap) => {
+        const lastTime = prevMap[verbId] || 0;
+        if (now - lastTime > 600) {
+          updateCardSRS(verbId, status === "OK");
+          return { ...prevMap, [verbId]: now };
+        }
+        return prevMap;
+      });
+    }
   };
 
   // Update an adjective progress status
@@ -437,6 +569,19 @@ export default function App() {
       [adjId]: status,
     }));
     recordStudyActivity();
+
+    // Prevent duplicate updates within a short frame
+    const now = Date.now();
+    if (status !== "UNSTUDIED") {
+      setLastSrsUpdate((prevMap) => {
+        const lastTime = prevMap[adjId] || 0;
+        if (now - lastTime > 600) {
+          updateCardSRS(adjId, status === "OK");
+          return { ...prevMap, [adjId]: now };
+        }
+        return prevMap;
+      });
+    }
   };
 
   // Update a grammar progress status
@@ -584,126 +729,146 @@ export default function App() {
     }
   };
 
-  // Filtering criteria
-  const filteredCards = cards.filter((card) => {
-    const cardStatus = progress[card.id] || "UNSTUDIED";
-    const matchesFilter =
-      activeFilter === "ALL" ||
-      (activeFilter === "NOT_YET" && cardStatus === "NOT_YET") ||
-      (activeFilter === "OK" && cardStatus === "OK");
+  // Filtering criteria (optimized via useMemo)
+  const filteredCards = useMemo(() => {
+    return cards.filter((card) => {
+      const cardStatus = progress[card.id] || "UNSTUDIED";
+      const matchesFilter =
+        activeFilter === "ALL" ||
+        (activeFilter === "NOT_YET" && cardStatus === "NOT_YET") ||
+        (activeFilter === "OK" && cardStatus === "OK");
 
-    const query = searchQuery.toLowerCase().trim();
-    const matchesSearch =
-      !query ||
-      card.kanji.toLowerCase().includes(query) ||
-      card.furigana.toLowerCase().includes(query) ||
-      card.englishMeaning.toLowerCase().includes(query) ||
-      card.sinhalaMeaning.toLowerCase().includes(query) ||
-      card.onyomi.toLowerCase().includes(query) ||
-      card.kunyomi.toLowerCase().includes(query);
+      const query = searchQuery.toLowerCase().trim();
+      const matchesSearch =
+        !query ||
+        card.kanji.toLowerCase().includes(query) ||
+        card.furigana.toLowerCase().includes(query) ||
+        card.englishMeaning.toLowerCase().includes(query) ||
+        card.sinhalaMeaning.toLowerCase().includes(query) ||
+        card.onyomi.toLowerCase().includes(query) ||
+        card.kunyomi.toLowerCase().includes(query);
 
-    return matchesFilter && matchesSearch;
-  });
+      return matchesFilter && matchesSearch;
+    });
+  }, [cards, progress, activeFilter, searchQuery]);
 
-  // Calculate scores/ratios
-  const okCount = cards.reduce((sum, card) => (progress[card.id] === "OK" ? sum + 1 : sum), 0);
-  const notYetCount = cards.reduce((sum, card) => (progress[card.id] === "NOT_YET" ? sum + 1 : sum), 0);
-  const percentComplete = cards.length > 0 ? Math.round((okCount / cards.length) * 100) : 0;
+  // Calculate scores/ratios (optimized via useMemo)
+  const { okCount, notYetCount, percentComplete } = useMemo(() => {
+    const ok = cards.reduce((sum, card) => (progress[card.id] === "OK" ? sum + 1 : sum), 0);
+    const notYet = cards.reduce((sum, card) => (progress[card.id] === "NOT_YET" ? sum + 1 : sum), 0);
+    const percent = cards.length > 0 ? Math.round((ok / cards.length) * 100) : 0;
+    return { okCount: ok, notYetCount: notYet, percentComplete: percent };
+  }, [cards, progress]);
 
-  // Verb scores/ratios and filtering
-  const okVerbsCount = verbs.reduce((sum, v) => (verbsProgress[v.id] === "OK" ? sum + 1 : sum), 0);
-  const notYetVerbsCount = verbs.reduce((sum, v) => (verbsProgress[v.id] === "NOT_YET" ? sum + 1 : sum), 0);
-  const percentVerbsComplete = verbs.length > 0 ? Math.round((okVerbsCount / verbs.length) * 100) : 0;
+  // Verb scores/ratios and filtering (optimized via useMemo)
+  const { okVerbsCount, notYetVerbsCount, percentVerbsComplete } = useMemo(() => {
+    const ok = verbs.reduce((sum, v) => (verbsProgress[v.id] === "OK" ? sum + 1 : sum), 0);
+    const notYet = verbs.reduce((sum, v) => (verbsProgress[v.id] === "NOT_YET" ? sum + 1 : sum), 0);
+    const percent = verbs.length > 0 ? Math.round((ok / verbs.length) * 100) : 0;
+    return { okVerbsCount: ok, notYetVerbsCount: notYet, percentVerbsComplete: percent };
+  }, [verbs, verbsProgress]);
 
-  const filteredVerbs = verbs.filter((verb) => {
-    const cardStatus = verbsProgress[verb.id] || "UNSTUDIED";
-    const matchesFilter =
-      activeVerbsFilter === "ALL" ||
-      (activeVerbsFilter === "NOT_YET" && cardStatus === "NOT_YET") ||
-      (activeVerbsFilter === "OK" && cardStatus === "OK");
+  const filteredVerbs = useMemo(() => {
+    return verbs.filter((verb) => {
+      const cardStatus = verbsProgress[verb.id] || "UNSTUDIED";
+      const matchesFilter =
+        activeVerbsFilter === "ALL" ||
+        (activeVerbsFilter === "NOT_YET" && cardStatus === "NOT_YET") ||
+        (activeVerbsFilter === "OK" && cardStatus === "OK");
 
-    const query = verbsSearchQuery.toLowerCase().trim();
-    const matchesSearch =
-      !query ||
-      verb.sinhalaMeaning.toLowerCase().includes(query) ||
-      verb.kanji.toLowerCase().includes(query) ||
-      verb.furigana.toLowerCase().includes(query) ||
-      verb.masu.toLowerCase().includes(query) ||
-      verb.dictionary.toLowerCase().includes(query) ||
-      verb.te.toLowerCase().includes(query) ||
-      verb.ta.toLowerCase().includes(query) ||
-      verb.nai.toLowerCase().includes(query) ||
-      verb.nakatta.toLowerCase().includes(query);
+      const query = verbsSearchQuery.toLowerCase().trim();
+      const matchesSearch =
+        !query ||
+        verb.sinhalaMeaning.toLowerCase().includes(query) ||
+        verb.kanji.toLowerCase().includes(query) ||
+        verb.furigana.toLowerCase().includes(query) ||
+        verb.masu.toLowerCase().includes(query) ||
+        verb.dictionary.toLowerCase().includes(query) ||
+        verb.te.toLowerCase().includes(query) ||
+        verb.ta.toLowerCase().includes(query) ||
+        verb.nai.toLowerCase().includes(query) ||
+        verb.nakatta.toLowerCase().includes(query);
 
-    return matchesFilter && matchesSearch;
-  });
+      return matchesFilter && matchesSearch;
+    });
+  }, [verbs, verbsProgress, activeVerbsFilter, verbsSearchQuery]);
 
-  // Adjective scores/ratios and filtering
-  const okAdjectivesCount = adjectives.reduce((sum, a) => (adjectivesProgress[a.id] === "OK" ? sum + 1 : sum), 0);
-  const notYetAdjectivesCount = adjectives.reduce((sum, a) => (adjectivesProgress[a.id] === "NOT_YET" ? sum + 1 : sum), 0);
-  const percentAdjectivesComplete = adjectives.length > 0 ? Math.round((okAdjectivesCount / adjectives.length) * 100) : 0;
+  // Adjective scores/ratios and filtering (optimized via useMemo)
+  const { okAdjectivesCount, notYetAdjectivesCount, percentAdjectivesComplete } = useMemo(() => {
+    const ok = adjectives.reduce((sum, a) => (adjectivesProgress[a.id] === "OK" ? sum + 1 : sum), 0);
+    const notYet = adjectives.reduce((sum, a) => (adjectivesProgress[a.id] === "NOT_YET" ? sum + 1 : sum), 0);
+    const percent = adjectives.length > 0 ? Math.round((ok / adjectives.length) * 100) : 0;
+    return { okAdjectivesCount: ok, notYetAdjectivesCount: notYet, percentAdjectivesComplete: percent };
+  }, [adjectives, adjectivesProgress]);
 
-  const filteredAdjectives = adjectives.filter((adj) => {
-    const cardStatus = adjectivesProgress[adj.id] || "UNSTUDIED";
-    const matchesStatus =
-      activeAdjectivesFilter === "ALL" ||
-      (activeAdjectivesFilter === "NOT_YET" && cardStatus === "NOT_YET") ||
-      (activeAdjectivesFilter === "OK" && cardStatus === "OK");
+  const filteredAdjectives = useMemo(() => {
+    return adjectives.filter((adj) => {
+      const cardStatus = adjectivesProgress[adj.id] || "UNSTUDIED";
+      const matchesStatus =
+        activeAdjectivesFilter === "ALL" ||
+        (activeAdjectivesFilter === "NOT_YET" && cardStatus === "NOT_YET") ||
+        (activeAdjectivesFilter === "OK" && cardStatus === "OK");
 
-    const matchesType =
-      activeAdjectiveTypeFilter === "ALL" ||
-      (activeAdjectiveTypeFilter === "I" && adj.type === "i") ||
-      (activeAdjectiveTypeFilter === "NA" && adj.type === "na");
+      const matchesType =
+        activeAdjectiveTypeFilter === "ALL" ||
+        (activeAdjectiveTypeFilter === "I" && adj.type === "i") ||
+        (activeAdjectiveTypeFilter === "NA" && adj.type === "na");
 
-    const query = adjectivesSearchQuery.toLowerCase().trim();
-    const matchesSearch =
-      !query ||
-      adj.sinhalaMeaning.toLowerCase().includes(query) ||
-      adj.kanji.toLowerCase().includes(query) ||
-      adj.hiragana.toLowerCase().includes(query);
+      const query = adjectivesSearchQuery.toLowerCase().trim();
+      const matchesSearch =
+        !query ||
+        adj.sinhalaMeaning.toLowerCase().includes(query) ||
+        adj.kanji.toLowerCase().includes(query) ||
+        adj.hiragana.toLowerCase().includes(query);
 
-    return matchesStatus && matchesType && matchesSearch;
-  });
+      return matchesStatus && matchesType && matchesSearch;
+    });
+  }, [adjectives, adjectivesProgress, activeAdjectivesFilter, activeAdjectiveTypeFilter, adjectivesSearchQuery]);
 
-  // Grammar scores/ratios and filtering
-  const okGrammarCount = grammarList.reduce((sum, g) => (grammarProgress[g.id] === "OK" ? sum + 1 : sum), 0);
-  const notYetGrammarCount = grammarList.reduce((sum, g) => (grammarProgress[g.id] === "NOT_YET" ? sum + 1 : sum), 0);
-  const percentGrammarComplete = grammarList.length > 0 ? Math.round((okGrammarCount / grammarList.length) * 100) : 0;
+  // Grammar scores/ratios and filtering (optimized via useMemo)
+  const { okGrammarCount, notYetGrammarCount, percentGrammarComplete } = useMemo(() => {
+    const ok = grammarList.reduce((sum, g) => (grammarProgress[g.id] === "OK" ? sum + 1 : sum), 0);
+    const notYet = grammarList.reduce((sum, g) => (grammarProgress[g.id] === "NOT_YET" ? sum + 1 : sum), 0);
+    const percent = grammarList.length > 0 ? Math.round((ok / grammarList.length) * 100) : 0;
+    return { okGrammarCount: ok, notYetGrammarCount: notYet, percentGrammarComplete: percent };
+  }, [grammarList, grammarProgress]);
 
-  const filteredGrammars = grammarList.filter((grammar) => {
-    const cardStatus = grammarProgress[grammar.id] || "UNSTUDIED";
-    const matchesFilter =
-      activeGrammarFilter === "ALL" ||
-      (activeGrammarFilter === "NOT_YET" && cardStatus === "NOT_YET") ||
-      (activeGrammarFilter === "OK" && cardStatus === "OK");
+  const filteredGrammars = useMemo(() => {
+    return grammarList.filter((grammar) => {
+      const cardStatus = grammarProgress[grammar.id] || "UNSTUDIED";
+      const matchesFilter =
+        activeGrammarFilter === "ALL" ||
+        (activeGrammarFilter === "NOT_YET" && cardStatus === "NOT_YET") ||
+        (activeGrammarFilter === "OK" && cardStatus === "OK");
 
-    const query = grammarSearchQuery.toLowerCase().trim();
-    const matchesSearch =
-      !query ||
-      grammar.index.toLowerCase().includes(query) ||
-      grammar.title.toLowerCase().includes(query) ||
-      grammar.romaji.toLowerCase().includes(query) ||
-      grammar.pattern.toLowerCase().includes(query) ||
-      grammar.sinhalaExplanation.toLowerCase().includes(query) ||
-      grammar.englishExplanation.toLowerCase().includes(query);
+      const query = grammarSearchQuery.toLowerCase().trim();
+      const matchesSearch =
+        !query ||
+        grammar.index.toLowerCase().includes(query) ||
+        grammar.title.toLowerCase().includes(query) ||
+        grammar.romaji.toLowerCase().includes(query) ||
+        grammar.pattern.toLowerCase().includes(query) ||
+        grammar.sinhalaExplanation.toLowerCase().includes(query) ||
+        grammar.englishExplanation.toLowerCase().includes(query);
 
-    return matchesFilter && matchesSearch;
-  });
+      return matchesFilter && matchesSearch;
+    });
+  }, [grammarList, grammarProgress, activeGrammarFilter, grammarSearchQuery]);
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#fdfbf7] text-[#2f3e46]" id="main-jft-container">
+    <div className="min-h-screen flex flex-col transition-colors duration-200 bg-[#fdfbf7] text-[#352d28]" id="main-jft-container">
       {/* Dynamic Header */}
-      <header className="sticky top-0 z-40 bg-white border-b border-[#e9e2d7] shadow-sm">
+      <header className="sticky top-0 z-40 bg-white border-b border-[#e9e2d7] shadow-sm transition-colors duration-150">
         <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-xl bg-[#52796f] flex items-center justify-center text-white font-bold text-lg shadow-md shadow-[#52796f]/15">
               漢字
             </div>
             <div>
-              <h1 className="text-xl font-bold font-display tracking-tight text-[#354f52]">
+              <h1 className="text-xl font-extrabold font-display tracking-tight text-[#52796f]">
                 JFT & N4 Learning Helper
               </h1>
-              <p className="text-xs text-[#84a98c] font-medium">
+              <p className="text-xs text-[#bc6c25] font-semibold">
                 Sinhala & English Translations with Real-time Assessor
               </p>
             </div>
@@ -713,13 +878,13 @@ export default function App() {
           <div className="flex flex-wrap items-center gap-3 self-start md:self-auto">
             
             {/* Widget 1: Pomodoro-style study timer */}
-            <div className="flex items-center gap-2.5 bg-[#fdfbf7] border border-[#e9e2d7] rounded-xl p-1.5 px-3">
+            <div className="flex items-center gap-2.5 bg-[#fcfaf5] border border-[#e9dfcc] rounded-xl p-1.5 px-3 shadow-3xs">
               <div className="flex items-center gap-1.5 shrink-0">
                 <div className={`p-1 rounded-lg ${pomodoroMode === "focus" ? "bg-amber-100 text-[#52796f] animate-pulse" : "bg-[#cad2c5]/40 text-[#52796f]"}`}>
                   {pomodoroMode === "focus" ? <Brain className="w-3.5 h-3.5" /> : <Coffee className="w-3.5 h-3.5" />}
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-wider block leading-none mb-0.5">
+                  <span className="text-[8px] font-extrabold text-[#84a98c] uppercase tracking-wider block leading-none mb-0.5">
                     {pomodoroMode === "focus" ? "Focus" : "Break"}
                   </span>
                   <div className="flex items-center gap-1">
@@ -741,7 +906,7 @@ export default function App() {
                             setPomodoroSeconds(val * 60);
                           }
                         }}
-                        className="text-[9px] bg-[#f0ede6] hover:bg-[#cad2c5]/40 border-0 rounded-md font-bold text-[#52796f] p-0.5 px-1 ml-1 cursor-pointer outline-none shrink-0"
+                        className="text-[9px] bg-[#eae3df] hover:bg-[#ebdcc7]/60 border-0 rounded-md font-bold text-[#354f52] p-0.5 px-1 ml-1 cursor-pointer outline-none shrink-0"
                         title="Set focus minutes"
                       >
                         {[15, 25, 30, 45, 60, 90, 120].map((m) => (
@@ -756,11 +921,11 @@ export default function App() {
               </div>
 
               {/* Timer Controls */}
-              <div className="flex items-center gap-1 border-l border-[#e9e2d7] pl-1.5 shrink-0">
+              <div className="flex items-center gap-1 border-l border-[#e9dfcc] pl-1.5 shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsTimerRunning(!isTimerRunning)}
-                  className={`p-1 rounded transition cursor-pointer ${isTimerRunning ? "bg-[#354f52] text-white" : "bg-[#f0ede6] text-[#354f52] hover:bg-[#cad2c5]"}`}
+                  className={`p-1 rounded transition cursor-pointer ${isTimerRunning ? "bg-[#354f52] text-white" : "bg-[#eae3df] text-[#52796f] hover:bg-[#ebdcc7]"}`}
                   title={isTimerRunning ? "Pause timer" : "Start study timer"}
                 >
                   {isTimerRunning ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
@@ -771,7 +936,7 @@ export default function App() {
                     setIsTimerRunning(false);
                     setPomodoroSeconds(pomodoroMode === "focus" ? focusDurationMinutes * 60 : 5 * 60);
                   }}
-                  className="p-1 bg-[#f0ede6] hover:bg-[#cad2c5] text-slate-600 rounded cursor-pointer transition"
+                  className="p-1 bg-[#eae3df] hover:bg-[#ebdcc7] text-slate-600 rounded cursor-pointer transition"
                   title="Reset clock"
                 >
                   <RotateCcw className="w-3 h-3" />
@@ -780,8 +945,8 @@ export default function App() {
 
               {/* Total Active Session display */}
               {totalSessionStudyTime > 0 && (
-                <div className="border-l border-[#e9e2d7] pl-1.5 text-right shrink-0">
-                  <span className="text-[8px] font-bold text-slate-400 block uppercase leading-none">Studied</span>
+                <div className="border-l border-[#e9dfcc] pl-1.5 text-right shrink-0">
+                  <span className="text-[8px] font-bold text-[#84a98c] block uppercase leading-none">Studied</span>
                   <span className="text-[10px] font-black text-[#52796f] block mt-0.5">
                     {(() => {
                       const mins = Math.floor(totalSessionStudyTime / 60);
@@ -794,18 +959,18 @@ export default function App() {
             </div>
 
             {/* Widget 2: Daily Study Goal */}
-            <div className="flex items-center gap-2 bg-[#fdfbf7] border border-[#e9e2d7] rounded-xl p-1.5 px-3">
-              <div className="p-1 bg-emerald-50 text-[#52796f] rounded-lg">
+            <div className="flex items-center gap-2 bg-[#fcfaf5] border border-[#e9dfcc] rounded-xl p-1.5 px-3 shadow-3xs">
+              <div className="p-1 bg-[#cad2c5]/40 text-[#52796f] rounded-lg">
                 <Award className="w-3.5 h-3.5" />
               </div>
               <div className="shrink-0">
                 <div className="flex items-center justify-between gap-1 leading-none">
-                  <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-wider block">Daily Goal</span>
+                  <span className="text-[8px] font-extrabold text-[#84a98c] uppercase tracking-wider block">Daily Goal</span>
                   <span className="text-[9px] font-black text-[#52796f]">
                     {studiedTodayCount}/{dailyGoalToggle}
                   </span>
                 </div>
-                <div className="w-16 bg-[#f0ede6] rounded-full h-1 mt-1 overflow-hidden">
+                <div className="w-16 bg-[#eae3df] rounded-full h-1 mt-1 overflow-hidden">
                   <div
                     className="bg-[#52796f] h-1 rounded-full transition-all duration-300"
                     style={{ width: `${Math.min(Math.round((studiedTodayCount / dailyGoalToggle) * 100), 100)}%` }}
@@ -815,7 +980,7 @@ export default function App() {
             </div>
 
             {/* Original Progress score */}
-            <div className="flex items-center gap-2 bg-[#fdfbf7] border border-[#e9e2d7] rounded-xl p-1.5 px-3">
+            <div className="flex items-center gap-2 bg-[#fcfaf5] border border-[#e9dfcc] rounded-xl p-1.5 px-3 shadow-3xs">
               <div className="flex flex-col shrink-0">
                 <div className="flex items-center gap-1 leading-none">
                   <span className="text-[8px] font-bold text-[#84a98c] tracking-wider uppercase block">
@@ -823,14 +988,14 @@ export default function App() {
                   </span>
                   <span className="text-[10px] font-black text-[#52796f]">{percentComplete}%</span>
                 </div>
-                <div className="w-14 bg-[#f0ede6] rounded-full h-1 mt-1 overflow-hidden">
+                <div className="w-14 bg-[#eae3df] rounded-full h-1 mt-1 overflow-hidden">
                   <div
                     className="bg-[#52796f] h-1 rounded-full transition-all duration-300"
                     style={{ width: `${percentComplete}%` }}
                   />
                 </div>
               </div>
-              <div className="border-l border-[#e9e2d7] pl-1.5 text-[10px] font-extrabold text-[#354f52]">
+              <div className="border-l border-[#e9dfcc] pl-1.5 text-[10px] font-extrabold text-[#354f52]">
                 ✔️ {okCount}
               </div>
             </div>
@@ -839,57 +1004,58 @@ export default function App() {
         </div>
 
         {/* Unified full-width tab switcher responsive bar */}
-        <div className="bg-transparent border-t border-[#e9e2d7] px-4 py-3.5">
+        <div className="bg-transparent border-t border-[#e9dfcc] px-4 py-3.5">
           <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
             
             {/* Mobile View Toggle Bar: Displays active tab cleanly and offers a toggle button */}
-            <div className="md:hidden flex items-center justify-between w-full bg-[#f0ede6]/70 p-2.5 px-4 rounded-2xl border border-[#e9e2d7]/85 shadow-3xs">
+            <div className="md:hidden flex items-center justify-between w-full bg-[#faf8f5] p-2.5 px-4 rounded-2xl border border-[#e9dfcc] shadow-3xs">
               <span className="text-xs font-black text-[#52796f] uppercase flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                ACTIVE: <span className="underline decoration-wavy decoration-[#84a98c] pr-1">{activeTab.toUpperCase()}</span>
+                ACTIVE: <span className="font-extrabold pr-1 text-[#52796f]">{activeTab.toUpperCase()}</span>
               </span>
               <button
                 type="button"
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                className="px-4 py-2 bg-[#52796f] hover:bg-[#354f52] text-white rounded-xl text-xs font-black shadow-3xs flex items-center gap-1.5 transition duration-150 cursor-pointer"
+                className="px-4 py-2 bg-[#84a98c]/30 hover:bg-[#84a98c]/45 text-[#354f52] rounded-xl text-xs font-black shadow-3xs flex items-center gap-1.5 transition duration-150 cursor-pointer"
               >
                 {isMobileMenuOpen ? "Hide Menu ✕" : "Show Menu ☰"}
               </button>
             </div>
 
             {/* Switcher Grid: hidden on mobile by default unless isMobileMenuOpen is true */}
-            <div className={`${isMobileMenuOpen ? "grid" : "hidden md:grid"} grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 bg-[#f0ede6]/80 p-1.5 rounded-2xl w-full shadow-3xs transition-all duration-300`}>
+            <div className={`${isMobileMenuOpen ? "grid" : "hidden md:grid"} grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-8 gap-2 bg-[#faf8f5] border border-[#e9e2d7]/80 p-2 rounded-2xl w-full shadow-3xs transition-all duration-300`}>
               
-              {/* Tab 1: JFT Kanji */}
+              {/* Tab 1: Alphabet */}
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab("alphabet");
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`px-3 py-3 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
+                  activeTab === "alphabet"
+                    ? "bg-[#52796f] text-white shadow-md border-0 ring-4 ring-[#52796f]/15"
+                    : "text-[#354f52] hover:bg-white hover:text-[#bc6c25] border border-[#e9e2d7]/50"
+                }`}
+              >
+                <BookOpen className={`w-4 h-4 ${activeTab === "alphabet" ? "text-white" : "text-[#52796f]"}`} /> Alphabet
+              </button>
+
+              {/* Tab 2: JFT Kanji */}
               <button
                 type="button"
                 onClick={() => {
                   setActiveTab("learn");
+                  setKanjiViewMode("learn");
                   setIsMobileMenuOpen(false);
                 }}
-                className={`px-3 py-2.5 rounded-xl text-xs font-black transition-all duration-205 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
-                  activeTab === "learn"
-                    ? "bg-white text-[#52796f] shadow-xs border border-[#52796f]/30"
-                    : "text-[#52796f]/70 hover:bg-white/45 hover:text-[#52796f]"
+                className={`px-3 py-3 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
+                  activeTab === "learn" && kanjiViewMode === "learn"
+                    ? "bg-[#52796f] text-white shadow-md border-0 ring-4 ring-[#52796f]/15"
+                    : "text-[#354f52] hover:bg-white hover:text-[#bc6c25] border border-[#e9e2d7]/50"
                 }`}
               >
-                <GraduationCap className="w-4 h-4 text-[#52796f]" /> JFT Kanji
-              </button>
-
-              {/* Tab 2: Kanji Test */}
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveTab("test");
-                  setIsMobileMenuOpen(false);
-                }}
-                className={`px-3 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
-                  activeTab === "test"
-                    ? "bg-white text-[#52796f] shadow-xs border border-[#52796f]/30"
-                    : "text-[#52796f]/70 hover:bg-white/45 hover:text-[#52796f]"
-                }`}
-              >
-                <Sparkles className="w-4 h-4 text-[#52796f] animate-pulse" /> Kanji Test
+                <GraduationCap className={`w-4 h-4 ${activeTab === "learn" && kanjiViewMode === "learn" ? "text-white" : "text-[#52796f]"}`} /> JFT Kanji
               </button>
 
               {/* Tab 3: Verbs (ක්‍රියාපද) */}
@@ -899,93 +1065,93 @@ export default function App() {
                   setActiveTab("verbs");
                   setIsMobileMenuOpen(false);
                 }}
-                className={`px-3 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
+                className={`px-3 py-3 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
                   activeTab === "verbs"
-                    ? "bg-white text-[#52796f] shadow-xs border border-[#52796f]/30"
-                    : "text-[#52796f]/70 hover:bg-white/45 hover:text-[#52796f]"
+                    ? "bg-[#52796f] text-white shadow-md border-0 ring-4 ring-[#52796f]/15"
+                    : "text-[#354f52] hover:bg-white hover:text-[#bc6c25] border border-[#e9e2d7]/50"
                 }`}
               >
-                <Zap className="w-4 h-4 text-orange-500" /> Verbs
+                <Zap className={`w-4 h-4 ${activeTab === "verbs" ? "text-white animate-bounce" : "text-orange-500"}`} /> Verbs
               </button>
 
-              {/* Tab 4: Adjectives (විශේෂණ) */}
+              {/* Tab 5: Adjectives (විශේෂණ) */}
               <button
                 type="button"
                 onClick={() => {
                   setActiveTab("adjectives");
                   setIsMobileMenuOpen(false);
                 }}
-                className={`px-3 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
+                className={`px-3 py-3 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
                   activeTab === "adjectives"
-                    ? "bg-white text-[#52796f] shadow-xs border border-[#52796f]/30"
-                    : "text-[#52796f]/70 hover:bg-white/45 hover:text-[#52796f]"
+                    ? "bg-[#52796f] text-white shadow-md border-0 ring-4 ring-[#52796f]/15"
+                    : "text-[#354f52] hover:bg-white hover:text-[#bc6c25] border border-[#e9e2d7]/50"
                 }`}
               >
-                <Languages className="w-4 h-4 text-teal-600" /> Adjectives
+                <Languages className={`w-4 h-4 ${activeTab === "adjectives" ? "text-white" : "text-teal-600"}`} /> Adjectives
               </button>
 
-              {/* Tab 5: Grammar (ව්‍යාකරණ)  --> Styled forest green! */}
+              {/* Tab 6: Grammar (ව්‍යාකරණ) */}
               <button
                 type="button"
                 onClick={() => {
                   setActiveTab("grammar");
                   setIsMobileMenuOpen(false);
                 }}
-                className={`px-3 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
+                className={`px-3 py-3 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
                   activeTab === "grammar"
-                    ? "bg-white text-[#52796f] shadow-xs border border-[#52796f]/30"
-                    : "text-[#52796f]/70 hover:bg-white/45 hover:text-[#52796f]"
+                    ? "bg-[#52796f] text-white shadow-md border-0 ring-4 ring-[#52796f]/15"
+                    : "text-[#354f52] hover:bg-white hover:text-[#bc6c25] border border-[#e9e2d7]/50"
                 }`}
               >
-                <BookOpen className="w-4 h-4 text-[#52796f]" /> Grammar
+                <BookOpen className={`w-4 h-4 ${activeTab === "grammar" ? "text-white" : "text-[#52796f]"}`} /> Grammar
               </button>
 
-              {/* Tab 6: Dictionary (ශබ්දකෝෂය)  --> Styled forest green! */}
+              {/* Tab 7: Dictionary (ශබ්දකෝෂය) */}
               <button
                 type="button"
                 onClick={() => {
                   setActiveTab("dictionary");
                   setIsMobileMenuOpen(false);
                 }}
-                className={`px-3 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
+                className={`px-3 py-3 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
                   activeTab === "dictionary"
-                    ? "bg-white text-[#52796f] shadow-xs border border-[#52796f]/30"
-                    : "text-[#52796f]/70 hover:bg-white/45 hover:text-[#52796f]"
+                    ? "bg-[#52796f] text-white shadow-md border-0 ring-4 ring-[#52796f]/15"
+                    : "text-[#354f52] hover:bg-white hover:text-[#bc6c25] border border-[#e9e2d7]/50"
                 }`}
               >
-                <BookMarked className="w-4 h-4 text-[#52796f]" /> Dictionary
+                <BookMarked className={`w-4 h-4 ${activeTab === "dictionary" ? "text-white" : "text-[#52796f]"}`} /> Dictionary
               </button>
 
-              {/* Tab 7: Statistics / Progress (ප්‍රගතිය)  --> Styled forest green! */}
+              {/* Tab 8: Statistics / Progress (ප්‍රගතිය) */}
               <button
                 type="button"
                 onClick={() => {
                   setActiveTab("stats");
                   setIsMobileMenuOpen(false);
                 }}
-                className={`px-3 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
+                className={`px-3 py-3 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
                   activeTab === "stats"
-                    ? "bg-white text-[#52796f] shadow-xs border border-[#52796f]/30"
-                    : "text-[#52796f]/70 hover:bg-white/45 hover:text-[#52796f]"
+                    ? "bg-[#52796f] text-white shadow-md border-0 ring-4 ring-[#52796f]/15"
+                    : "text-[#354f52] hover:bg-white hover:text-[#bc6c25] border border-[#e9e2d7]/50"
                 }`}
               >
-                <BarChart4 className="w-4 h-4 text-[#52796f]" /> Progress
+                <BarChart4 className={`w-4 h-4 ${activeTab === "stats" ? "text-white" : "text-[#52796f]"}`} /> Progress
               </button>
 
-              {/* Tab 8: JFT Quiz (ප්‍රශ්නාවලිය) - ALIGNED AT THE VERY END --> Styled forest green! */}
+              {/* Tab 9: JFT Quiz (ප්‍රශ්නාවලිය) */}
               <button
                 type="button"
                 onClick={() => {
                   setActiveTab("quiz");
                   setIsMobileMenuOpen(false);
                 }}
-                className={`px-3 py-2.5 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
+                className={`px-3 py-3 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
                   activeTab === "quiz"
-                    ? "bg-white text-[#52796f] shadow-xs border border-[#52796f]/30"
-                    : "text-[#52796f]/70 hover:bg-white/45 hover:text-[#52796f]"
+                    ? "bg-[#52796f] text-white shadow-md border-0 ring-4 ring-[#52796f]/15"
+                    : "text-[#354f52] hover:bg-white hover:text-[#bc6c25] border border-[#e9e2d7]/50"
                 }`}
               >
-                <HelpCircle className="w-4 h-4 text-emerald-600 animate-pulse" /> Quiz
+                <HelpCircle className={`w-4 h-4 ${activeTab === "quiz" ? "text-white animate-spin" : "text-emerald-600"}`} /> Quiz
               </button>
 
             </div>
@@ -996,36 +1162,72 @@ export default function App() {
       {/* Main Container Workspace */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 space-y-6">
         
+        {/* TAB 0: ALPHABET */}
+        {activeTab === "alphabet" && (
+          <div id="tab-panel-alphabet">
+            <AlphabetView />
+          </div>
+        )}
+
         {/* TAB 1: LEARN JFT KANJI */}
         {activeTab === "learn" && (
-          <div className="space-y-6">
+          <div className="space-y-6" id="tab-panel-learn">
+            <div className="space-y-6">
             
-            {/* Workspace Config Reset Options */}
-            <div className="max-w-xl mx-auto bg-[#ece2d0]/25 border border-[#e9e2d7] p-6 rounded-[24px] shadow-sm flex flex-col justify-between">
-              <div>
-                <h3 className="font-display font-bold text-sm text-[#bc6c25] flex items-center gap-1.5 justify-center">
-                  <Info className="w-4 h-4" /> Info & Workspace Reset
-                </h3>
-                <p className="text-xs text-[#2f3e46] mt-2 text-center leading-relaxed font-semibold">
-                  Loaded {cards.length} total Kanji cards. Marked: {okCount} learned checks. You can reset learning matrices or reload default definitions at any time.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-5">
-                <button
-                  onClick={handleResetProgress}
-                  className="w-full py-2.5 bg-white border border-[#bc6c25] hover:bg-[#fdfbf7] rounded-xl text-xs font-bold text-[#bc6c25] transition cursor-pointer"
-                >
-                  🧹 Clear Progress Tracking Data
-                </button>
-                <button
-                  onClick={handleResetAllToFactory}
-                  className="w-full py-2.5 bg-white border border-[#84a98c] hover:bg-[#fdfbf7] rounded-xl text-xs font-bold text-[#52796f] transition cursor-pointer"
-                >
-                  🔄 Reset Deck list to Factory Base
-                </button>
-              </div>
+            {/* Elegant Study vs Test Mode Switcher */}
+            <div className="flex gap-1 bg-[#ece2d0]/30 p-1.5 rounded-2xl border border-[#e9e2d7] max-w-md mx-auto">
+              <button
+                type="button"
+                onClick={() => setKanjiViewMode("learn")}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer text-center ${
+                  kanjiViewMode === "learn"
+                    ? "bg-[#52796f] text-white shadow-xs font-black"
+                    : "text-[#52796f] hover:bg-[#ece2d0]/60"
+                }`}
+              >
+                📚 Study List (ලැයිස්තුව)
+              </button>
+              <button
+                type="button"
+                onClick={() => setKanjiViewMode("test")}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer text-center ${
+                  kanjiViewMode === "test"
+                    ? "bg-[#52796f] text-white shadow-xs font-black"
+                    : "text-[#52796f] hover:bg-[#ece2d0]/60"
+                }`}
+              >
+                🧠 Kanji Test (පරීක්‍ෂණය)
+              </button>
             </div>
+
+            {kanjiViewMode === "learn" ? (
+              <div className="space-y-6 block">
+                {/* Workspace Config Reset Options */}
+                <div className="max-w-xl mx-auto bg-[#ece2d0]/25 border border-[#e9e2d7] p-6 rounded-[24px] shadow-sm flex flex-col justify-between">
+                  <div>
+                    <h3 className="font-display font-bold text-sm text-[#bc6c25] flex items-center gap-1.5 justify-center">
+                      <Info className="w-4 h-4" /> Info & Workspace Reset
+                    </h3>
+                    <p className="text-xs text-[#2f3e46] mt-2 text-center leading-relaxed font-semibold">
+                      Loaded {cards.length} total Kanji cards. Marked: {okCount} learned checks. You can reset learning matrices or reload default definitions at any time.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-5">
+                    <button
+                      onClick={handleResetProgress}
+                      className="w-full py-2.5 bg-white border border-[#bc6c25] hover:bg-[#fdfbf7] rounded-xl text-xs font-bold text-[#bc6c25] transition cursor-pointer"
+                    >
+                      🧹 Clear Progress Tracking Data
+                    </button>
+                    <button
+                      onClick={handleResetAllToFactory}
+                      className="w-full py-2.5 bg-white border border-[#84a98c] hover:bg-[#fdfbf7] rounded-xl text-xs font-bold text-[#52796f] transition cursor-pointer"
+                    >
+                      🔄 Reset Deck list to Factory Base
+                    </button>
+                  </div>
+                </div>
 
             {/* Filtering and Search controls Bar */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-white rounded-[24px] border border-[#e9e2d7] shadow-sm">
@@ -1052,7 +1254,7 @@ export default function App() {
                       : "text-[#84a98c] hover:text-[#bc6c25]"
                   }`}
                 >
-                  ❌ Not Yet ({notYetCount})
+                  ❌ Not Yet ({cards.length - okCount})
                 </button>
                 <button
                   type="button"
@@ -1082,16 +1284,29 @@ export default function App() {
 
             {/* Kanji Card Grid list */}
             {filteredCards.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6" id="kanji-deck-layout">
-                {filteredCards.map((card, index) => (
-                  <KanjiCardView
-                    key={card.id}
-                    card={card}
-                    status={progress[card.id] || "UNSTUDIED"}
-                    mode="learn"
-                    onStatusChange={(status) => handleUpdateStatus(card.id, status)}
-                  />
-                ))}
+              <div className="space-y-8">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6" id="kanji-deck-layout">
+                  {filteredCards.slice(0, visibleKanjiCount).map((card) => (
+                    <KanjiCardView
+                      key={card.id}
+                      card={card}
+                      status={progress[card.id] || "UNSTUDIED"}
+                      mode="learn"
+                      onStatusChange={(status) => handleUpdateStatus(card.id, status)}
+                    />
+                  ))}
+                </div>
+                {filteredCards.length > visibleKanjiCount && (
+                  <div className="flex justify-center pt-3">
+                    <button
+                      type="button"
+                      onClick={() => setVisibleKanjiCount((prev) => prev + 24)}
+                      className="px-8 py-3.5 bg-[#84a98c]/25 hover:bg-[#84a98c]/40 text-[#2f3e46] hover:text-[#111] rounded-2xl text-xs font-black tracking-wide shadow-3xs hover:shadow-2xs transition-all duration-250 flex items-center gap-2 cursor-pointer"
+                    >
+                      🚀 Load More Kanji (තවත් කන්ජි පෙන්වන්න)
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="p-12 text-center bg-white rounded-2xl border border-slate-200/80 shadow-xs">
@@ -1099,162 +1314,191 @@ export default function App() {
                 <p className="text-xs text-slate-300 mt-1">ඔබ ඇතුළත් කළ සෙවුම් වචන නැවත පරීක්ෂා කර බලන්න.</p>
               </div>
             )}
-          </div>
-        )}
-
-        {/* TAB 2: CHECK KANJI KNOWLEDGE */}
-        {activeTab === "test" && (
-          <div className="max-w-xl mx-auto space-y-6">
-            
-            {/* Context/Assessment description box */}
-            <div className="bg-white rounded-[24px] border border-[#e9e2d7] p-5 shadow-sm flex justify-between items-center gap-4">
-              <div>
-                <h3 className="font-display font-bold text-sm text-[#354f52] flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-[#bc6c25] animate-spin" /> Self Assessment Deck
-                </h3>
-                <p className="text-xs text-[#84a98c] mt-1 leading-relaxed">
-                  The deck is shuffled automatically. Card displays only the core Kanji character. Try recalling its translation, then click the card to flip it and reveal detailed translation options.
-                </p>
               </div>
-
-              <button
-                type="button"
-                onClick={shuffleTestDeck}
-                className="p-2.5 bg-[#f0ede6] hover:bg-[#cad2c5]/40 border border-[#e9e2d7] hover:border-[#84a98c] text-[#52796f] rounded-xl transition duration-150 inline-flex items-center gap-1.5 text-xs font-bold shrink-0 shadow-xs"
-                title="Shuffle Deck"
-              >
-                <Shuffle className="w-3.5 h-3.5" /> Shuffle
-              </button>
-            </div>
-
-            {testDeck.length > 0 ? (
-              <div className="space-y-6">
-                
-                {/* Visual Tracker numbers progress */}
-                <div className="flex justify-between items-center px-1">
-                  <span className="text-xs font-bold text-[#84a98c] tracking-wider">
-                    DECK POSITION: <span className="font-mono text-[#2f3e46] bg-[#f0ede6] px-2 py-0.5 rounded-md font-extrabold">{currentTestIndex + 1}</span> / {testDeck.length}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] uppercase font-bold text-[#84a98c] tracking-wider">
-                      Learned Status:
-                    </span>
-                    <span className="font-mono text-xs font-bold py-0.5 px-2 bg-[#f0ede6] text-[#2f3e46] rounded-md">
-                      {progress[testDeck[currentTestIndex]?.id] || "UNSTUDIED"}
-                    </span>
+            ) : (
+              <div className="max-w-xl mx-auto space-y-6">
+                {/* Context/Assessment description box */}
+                <div className="bg-white rounded-[24px] border border-[#e9e2d7] p-5 shadow-sm flex justify-between items-center gap-4">
+                  <div>
+                    <h3 className="font-display font-bold text-sm text-[#354f52] flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-[#bc6c25] animate-spin" /> Self Assessment Deck
+                    </h3>
+                    <p className="text-xs text-[#84a98c] mt-1 leading-relaxed">
+                      The deck is shuffled automatically. Card displays only the core Kanji character. Try recalling its translation, then click the card to flip it and reveal detailed translation options.
+                    </p>
                   </div>
-                </div>
-
-                {/* Main animated check card container */}
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={testDeck[currentTestIndex].id}
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -20 }}
-                    transition={{ duration: 0.2 }}
-                    className="w-full"
-                  >
-                    <KanjiCardView
-                      card={testDeck[currentTestIndex]}
-                      status={progress[testDeck[currentTestIndex].id] || "UNSTUDIED"}
-                      mode="test"
-                      isRevealed={isTestCardRevealed}
-                      onReveal={() => setIsTestCardRevealed(true)}
-                      onStatusChange={(status) => handleUpdateStatus(testDeck[currentTestIndex].id, status)}
-                    />
-                  </motion.div>
-                </AnimatePresence>
-
-                {/* Prev, Next controls deck navigation buttons */}
-                <div className="grid grid-cols-2 gap-4">
-                  <button
-                    type="button"
-                    disabled={currentTestIndex === 0}
-                    onClick={() => {
-                      if (currentTestIndex > 0) {
-                        setCurrentTestIndex(currentTestIndex - 1);
-                        setIsTestCardRevealed(false);
-                      }
-                    }}
-                    className="py-3 px-4 bg-white hover:bg-[#f0ede6] disabled:bg-[#fdfbf7] disabled:text-[#cad2c5] border border-[#e9e2d7] rounded-xl font-sans font-bold text-xs text-[#52796f] transition inline-flex items-center justify-center gap-2"
-                  >
-                    <ArrowLeft className="w-4 h-4" /> PREVIOUS
-                  </button>
 
                   <button
                     type="button"
-                    onClick={() => {
-                      if (currentTestIndex < testDeck.length - 1) {
-                        setCurrentTestIndex(currentTestIndex + 1);
-                        setIsTestCardRevealed(false);
-                      } else {
-                        // End of deck, reshuffle
-                        if (window.confirm("ඔබ අවසන් කාඩ්පත වෙත ළඟා වී ඇත! නැවත shuffle කිරීමට අවශ්‍ය ද? You reached the end. Re-shuffle the cards?")) {
-                          shuffleTestDeck();
-                        }
-                      }
-                    }}
-                    className="py-3 px-4 bg-[#52796f] hover:bg-[#354f52] text-white rounded-xl font-sans font-bold text-xs transition inline-flex items-center justify-center gap-2 shadow-md shadow-[#52796f]/10"
+                    onClick={shuffleTestDeck}
+                    className="p-2.5 bg-[#f0ede6] hover:bg-[#cad2c5]/40 border border-[#e9e2d7] hover:border-[#84a98c] text-[#52796f] rounded-xl transition duration-150 inline-flex items-center gap-1.5 text-xs font-bold shrink-0 shadow-xs cursor-pointer"
+                    title="Shuffle Deck"
                   >
-                    NEXT <ArrowRight className="w-4 h-4" />
+                    <Shuffle className="w-3.5 h-3.5" /> Shuffle
                   </button>
                 </div>
 
-                {/* Additional Quick Action buttons if card has been revealed */}
-                {isTestCardRevealed && (
-                  <div className="p-4 bg-white border border-[#e9e2d7] rounded-2xl shadow-sm text-center">
-                    <p className="text-xs font-bold text-[#52796f] mb-2">Did you recall this Kanji correctly?</p>
-                    <div className="flex justify-center gap-3">
+                {testDeck.length > 0 ? (
+                  <div className="space-y-6">
+                    {/* Visual Tracker numbers progress */}
+                    <div className="flex justify-between items-center px-1">
+                      <span className="text-xs font-bold text-[#84a98c] tracking-wider">
+                        DECK POSITION: <span className="font-mono text-[#2f3e46] bg-[#f0ede6] px-2 py-0.5 rounded-md font-extrabold">{currentTestIndex + 1}</span> / {testDeck.length}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] uppercase font-bold text-[#84a98c] tracking-wider">
+                          Learned Status:
+                        </span>
+                        <span className="font-mono text-xs font-bold py-0.5 px-2 bg-[#f0ede6] text-[#2f3e46] rounded-md">
+                          {progress[testDeck[currentTestIndex]?.id] || "UNSTUDIED"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Main animated check card container */}
+                    <AnimatePresence mode="wait">
+                      <motion.div
+                        key={testDeck[currentTestIndex].id}
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -20 }}
+                        transition={{ duration: 0.2 }}
+                        className="w-full"
+                      >
+                        <KanjiCardView
+                          card={testDeck[currentTestIndex]}
+                          status={progress[testDeck[currentTestIndex].id] || "UNSTUDIED"}
+                          mode="test"
+                          isRevealed={isTestCardRevealed}
+                          onReveal={() => setIsTestCardRevealed(true)}
+                          onStatusChange={(status) => handleUpdateStatus(testDeck[currentTestIndex].id, status)}
+                        />
+                      </motion.div>
+                    </AnimatePresence>
+
+                    {/* Prev, Next controls deck navigation buttons */}
+                    <div className="grid grid-cols-2 gap-4">
                       <button
+                        type="button"
+                        disabled={currentTestIndex === 0}
                         onClick={() => {
-                          handleUpdateStatus(testDeck[currentTestIndex].id, "NOT_YET");
-                          // Auto advance
-                          if (currentTestIndex < testDeck.length - 1) {
-                            setTimeout(() => {
-                              setCurrentTestIndex(prev => prev + 1);
-                              setIsTestCardRevealed(false);
-                            }, 350);
+                          if (currentTestIndex > 0) {
+                            setCurrentTestIndex(currentTestIndex - 1);
+                            setIsTestCardRevealed(false);
                           }
                         }}
-                        className="py-2.5 px-4 bg-[#bc6c25] hover:bg-[#bc6c25]/90 text-white rounded-xl text-xs font-bold duration-150 inline-flex items-center gap-1.5 shadow-sm"
+                        className="py-3 px-4 bg-white hover:bg-[#f0ede6] disabled:bg-[#fdfbf7] disabled:text-[#cad2c5] border border-[#e9e2d7] rounded-xl font-sans font-bold text-xs text-[#52796f] transition inline-flex items-center justify-center gap-2 cursor-pointer"
                       >
-                        <ThumbsDown className="w-3.5 h-3.5" /> No, forgot it
+                        <ArrowLeft className="w-4 h-4" /> PREVIOUS
                       </button>
+
                       <button
+                        type="button"
                         onClick={() => {
-                          handleUpdateStatus(testDeck[currentTestIndex].id, "OK");
-                          // Auto advance
                           if (currentTestIndex < testDeck.length - 1) {
-                            setTimeout(() => {
-                              setCurrentTestIndex(prev => prev + 1);
-                              setIsTestCardRevealed(false);
-                            }, 350);
+                            setCurrentTestIndex(currentTestIndex + 1);
+                            setIsTestCardRevealed(false);
+                          } else {
+                            // End of deck, reshuffle
+                            if (window.confirm("ඔබ අවසන් කාඩ්පත වෙත ළඟා වී ඇත! නැවත shuffle කිරීමට අවශ්‍ය ද? You reached the end. Re-shuffle the cards?")) {
+                              shuffleTestDeck();
+                            }
                           }
                         }}
-                        className="py-2.5 px-4 bg-[#52796f] hover:bg-[#354f52] text-white rounded-xl text-xs font-bold duration-150 inline-flex items-center gap-1.5 shadow-sm"
+                        className="py-3 px-4 bg-[#52796f] hover:bg-[#354f52] text-white rounded-xl font-sans font-bold text-xs transition inline-flex items-center justify-center gap-2 shadow-md shadow-[#52796f]/10 cursor-pointer"
                       >
-                        <ThumbsUp className="w-3.5 h-3.5" /> Yes, remembered!
+                        NEXT <ArrowRight className="w-4 h-4" />
                       </button>
                     </div>
+
+                    {/* Additional Quick Action buttons if card has been revealed */}
+                    {isTestCardRevealed && (
+                      <div className="p-4 bg-white border border-[#e9e2d7] rounded-2xl shadow-sm text-center">
+                        <p className="text-xs font-bold text-[#52796f] mb-2 font-semibold">Did you recall this Kanji correctly?</p>
+                        <div className="flex justify-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleUpdateStatus(testDeck[currentTestIndex].id, "NOT_YET");
+                              // Auto advance
+                              if (currentTestIndex < testDeck.length - 1) {
+                                setTimeout(() => {
+                                  setCurrentTestIndex(prev => prev + 1);
+                                  setIsTestCardRevealed(false);
+                                }, 350);
+                              }
+                            }}
+                            className="py-2.5 px-4 bg-[#bc6c25] hover:bg-[#bc6c25]/90 text-white rounded-xl text-xs font-bold duration-150 inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+                          >
+                            <ThumbsDown className="w-3.5 h-3.5" /> No, forgot it
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleUpdateStatus(testDeck[currentTestIndex].id, "OK");
+                              // Auto advance
+                              if (currentTestIndex < testDeck.length - 1) {
+                                setTimeout(() => {
+                                  setCurrentTestIndex(prev => prev + 1);
+                                  setIsTestCardRevealed(false);
+                                }, 350);
+                              }
+                            }}
+                            className="py-2.5 px-4 bg-[#52796f] hover:bg-[#354f52] text-white rounded-xl text-xs font-bold duration-150 inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+                          >
+                            <ThumbsUp className="w-3.5 h-3.5" /> Yes, remembered!
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-12 text-center bg-white rounded-2xl border border-[#e9e2d7]">
+                    <p className="text-sm font-semibold text-[#84a98c]">Your study deck is currently empty.</p>
+                    <p className="text-xs text-[#84a98c] mt-1">Go to "Learn JFT Kanji" tab to upload or add cards first.</p>
                   </div>
                 )}
               </div>
-            ) : (
-              <div className="p-12 text-center bg-white rounded-2xl border border-[#e9e2d7]">
-                <p className="text-sm font-semibold text-[#84a98c]">Your study deck is currently empty.</p>
-                <p className="text-xs text-[#84a98c] mt-1">Go to "Learn JFT Kanji" tab to upload or add cards first.</p>
-              </div>
             )}
           </div>
-        )}
+        </div>)}
 
         {/* TAB 3: LEARN & PRACTICE JFT VERBS */}
         {activeTab === "verbs" && (
-          <div className="space-y-6">
+          <div className="space-y-6" id="tab-panel-verbs">
+            <div className="space-y-6">
             
-            {/* Verbs Progress Header & Reset Options bar */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+            {/* Elegant Study vs Test Mode Switcher */}
+            <div className="flex gap-1 bg-[#ece2d0]/30 dark:bg-slate-800 p-1.5 rounded-2xl border border-[#e9e2d7] dark:border-slate-800 max-w-md mx-auto">
+              <button
+                type="button"
+                onClick={() => setVerbsViewMode("learn")}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer text-center ${
+                  verbsViewMode === "learn"
+                    ? "bg-[#52796f] text-white shadow-xs font-black"
+                    : "text-[#52796f] dark:text-slate-350 hover:bg-[#ece2d0]/60 dark:hover:bg-slate-700/60"
+                }`}
+              >
+                📚 Study List (ලැයිස්තුව)
+              </button>
+              <button
+                type="button"
+                onClick={() => setVerbsViewMode("test")}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer text-center ${
+                  verbsViewMode === "test"
+                    ? "bg-[#52796f] text-white shadow-xs font-black"
+                    : "text-[#52796f] dark:text-slate-350 hover:bg-[#ece2d0]/60 dark:hover:bg-slate-700/60"
+                }`}
+              >
+                🧠 Test Practice (පරීක්ෂණය)
+              </button>
+            </div>
+
+            {verbsViewMode === "learn" ? (
+              <div className="space-y-6">
+                
+                {/* Verbs Progress Header & Reset Options bar */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
               
               {/* Box 1: Verb Progress Metrics */}
               <div className="lg:col-span-8 bg-white p-6 rounded-[24px] border border-[#e9e2d7] shadow-sm flex flex-col justify-between">
@@ -1439,15 +1683,187 @@ export default function App() {
               </div>
             )}
           </div>
+        ) : (
+          <div className="max-w-xl mx-auto space-y-6">
+                
+            {/* Context/Assessment description box */}
+            <div className="bg-white dark:bg-slate-900 rounded-[24px] border border-[#e9e2d7] dark:border-slate-800 p-5 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <h3 className="font-display font-medium text-sm text-[#354f52] dark:text-emerald-300 flex items-center gap-1.5" id="verb-test-mode-title">
+                  <Sparkles className="w-4 h-4 text-[#bc6c25] animate-spin" /> Verbs SRS Evaluation Deck (ක්‍රියාපද පරීක්ෂණය)
+                </h3>
+                <p className="text-xs text-[#84a98c] dark:text-slate-400 mt-1 leading-relaxed">
+                  This deck is sorted based on Spaced Repetition weights. Click the card to flip and reveal all conjugation states and translation. Mark "Yes" if you remembered it correctly, or "No" to review it more often.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={shuffleVerbTestDeck}
+                className="p-2.5 bg-[#f0ede6] dark:bg-slate-800 hover:bg-[#cad2c5]/40 border border-[#e9e2d7] dark:border-slate-700 hover:border-[#84a98c] text-[#52796f] dark:text-slate-200 rounded-xl transition duration-150 inline-flex items-center gap-1.5 text-xs font-bold shrink-0 shadow-xs cursor-pointer"
+                title="Shuffle Deck"
+              >
+                <Shuffle className="w-3.5 h-3.5" /> Shuffle
+              </button>
+            </div>
+
+            {verbTestDeck.length > 0 ? (
+              <div className="space-y-6">
+                
+                {/* Visual Tracker numbers progress */}
+                <div className="flex justify-between items-center px-1">
+                  <span className="text-xs font-bold text-[#84a98c] dark:text-slate-400 tracking-wider">
+                    DECK POSITION: <span className="font-mono text-[#2f3e46] dark:text-slate-200 bg-[#f0ede6] dark:bg-slate-850 px-2 py-0.5 rounded-md font-extrabold">{currentVerbTestIndex + 1}</span> / {verbTestDeck.length}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] uppercase font-bold text-[#84a98c] dark:text-slate-400 tracking-wider">
+                      Learned Status:
+                    </span>
+                    <span className="font-mono text-xs font-bold py-0.5 px-2 bg-[#f0ede6] dark:bg-slate-850 text-[#2f3e46] dark:text-slate-200 rounded-md">
+                      {verbsProgress[verbTestDeck[currentVerbTestIndex]?.id] || "UNSTUDIED"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Main animated check card container */}
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={verbTestDeck[currentVerbTestIndex].id}
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    transition={{ duration: 0.2 }}
+                    className="w-full"
+                  >
+                    <VerbCardView
+                      key={verbTestDeck[currentVerbTestIndex].id}
+                      verb={verbTestDeck[currentVerbTestIndex]}
+                      practiceMode={verbsPracticePerspective}
+                      status={verbsProgress[verbTestDeck[currentVerbTestIndex].id] || "UNSTUDIED"}
+                      onReveal={() => setIsVerbTestCardRevealed(true)}
+                      onStatusChange={(status) => handleUpdateVerbStatus(verbTestDeck[currentVerbTestIndex].id, status)}
+                    />
+                  </motion.div>
+                </AnimatePresence>
+
+                {/* Prev, Next controls deck navigation buttons */}
+                <div className="grid grid-cols-2 gap-4">
+                  <button
+                    type="button"
+                    disabled={currentVerbTestIndex === 0}
+                    onClick={() => {
+                      if (currentVerbTestIndex > 0) {
+                        setCurrentVerbTestIndex(currentVerbTestIndex - 1);
+                        setIsVerbTestCardRevealed(false);
+                      }
+                    }}
+                    className="py-3 px-4 bg-white dark:bg-slate-900 hover:bg-[#f0ede6] dark:hover:bg-slate-850 disabled:bg-[#fdfbf7] dark:disabled:bg-slate-800 disabled:text-[#cad2c5] dark:disabled:text-slate-600 border border-[#e9e2d7] dark:border-slate-800 rounded-xl font-sans font-bold text-xs text-[#52796f] dark:text-slate-200 transition inline-flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <ArrowLeft className="w-4 h-4" /> PREVIOUS
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (currentVerbTestIndex < verbTestDeck.length - 1) {
+                        setCurrentVerbTestIndex(currentVerbTestIndex + 1);
+                        setIsVerbTestCardRevealed(false);
+                      } else {
+                        if (window.confirm("ඔබ අවසන් කාඩ්පත වෙත ළඟා වී ඇත! නැවත shuffle කිරීමට අවශ්‍ය ද? You reached the end. Re-shuffle the cards?")) {
+                          shuffleVerbTestDeck();
+                        }
+                      }
+                    }}
+                    className="py-3 px-4 bg-[#52796f] dark:bg-emerald-600 hover:bg-[#354f52] dark:hover:bg-emerald-700 text-white rounded-xl font-sans font-black text-xs transition inline-flex items-center justify-center gap-2 shadow-md hover:shadow-lg cursor-pointer"
+                  >
+                    NEXT <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Additional Quick Action buttons if card has been revealed */}
+                {isVerbTestCardRevealed && (
+                  <div className="p-4 bg-white dark:bg-slate-900 border border-[#e9e2d7] dark:border-slate-800 rounded-2xl shadow-sm text-center">
+                    <p className="text-xs font-bold text-[#52796f] dark:text-emerald-400 mb-2">Did you recall this verb meaning correctly?</p>
+                    <div className="flex justify-center gap-3">
+                      <button
+                        onClick={() => {
+                          handleUpdateVerbStatus(verbTestDeck[currentVerbTestIndex].id, "NOT_YET");
+                          if (currentVerbTestIndex < verbTestDeck.length - 1) {
+                            setTimeout(() => {
+                              setCurrentVerbTestIndex(prev => prev + 1);
+                              setIsVerbTestCardRevealed(false);
+                            }, 350);
+                          }
+                        }}
+                        className="py-2.5 px-4 bg-[#bc6c25] hover:bg-[#bc6c25]/90 text-white rounded-xl text-xs font-bold duration-150 inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+                      >
+                        <ThumbsDown className="w-3.5 h-3.5" /> No, forgot it
+                      </button>
+                      <button
+                        onClick={() => {
+                          handleUpdateVerbStatus(verbTestDeck[currentVerbTestIndex].id, "OK");
+                          if (currentVerbTestIndex < verbTestDeck.length - 1) {
+                            setTimeout(() => {
+                              setCurrentVerbTestIndex(prev => prev + 1);
+                              setIsVerbTestCardRevealed(false);
+                            }, 350);
+                          }
+                        }}
+                        className="py-2.5 px-4 bg-[#52796f] dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white rounded-xl text-xs font-bold duration-150 inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+                      >
+                        <ThumbsUp className="w-3.5 h-3.5" /> Yes, remembered!
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-2xl border border-[#e9e2d7] dark:border-slate-800">
+                <p className="text-sm font-semibold text-[#84a98c]">Your study deck is currently empty.</p>
+              </div>
+            )}
+          </div>
         )}
+      </div>
+    </div>)}
 
         {/* TAB 4: LEARN JFT ADJECTIVES */}
         {activeTab === "adjectives" && (
-          <div className="space-y-6">
-            {/* Header / Banner summary bar */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6" id="adjectives-stats-box">
-              {/* Box 1: Info Deck progress */}
-              <div className="lg:col-span-8 bg-white p-6 rounded-[28px] border border-[#e9e2d7] shadow-sm flex flex-col justify-between">
+          <div className="space-y-6" id="tab-panel-adjectives">
+            <div className="space-y-6">
+
+            {/* Elegant Study vs Test Mode Switcher */}
+            <div className="flex gap-1 bg-[#ece2d0]/30 dark:bg-slate-800 p-1.5 rounded-2xl border border-[#e9e2d7] dark:border-slate-800 max-w-md mx-auto">
+              <button
+                type="button"
+                onClick={() => setAdjectivesViewMode("learn")}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer text-center ${
+                  adjectivesViewMode === "learn"
+                    ? "bg-[#52796f] text-white shadow-xs font-black"
+                    : "text-[#52796f] dark:text-slate-350 hover:bg-[#ece2d0]/60 dark:hover:bg-slate-700/60"
+                }`}
+              >
+                📚 Study List (ලැයිස්තුව)
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdjectivesViewMode("test")}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer text-center ${
+                  adjectivesViewMode === "test"
+                    ? "bg-[#52796f] text-white shadow-xs font-black"
+                    : "text-[#52796f] dark:text-slate-350 hover:bg-[#ece2d0]/60 dark:hover:bg-slate-700/60"
+                }`}
+              >
+                🧠 Test Practice (පරීක්ෂණය)
+              </button>
+            </div>
+
+            {adjectivesViewMode === "learn" ? (
+              <div className="space-y-6">
+                {/* Header / Banner summary bar */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6" id="adjectives-stats-box">
+                  {/* Box 1: Info Deck progress */}
+                  <div className="lg:col-span-8 bg-white p-6 rounded-[28px] border border-[#e9e2d7] shadow-sm flex flex-col justify-between">
                 <div>
                   <h3 className="font-display font-black text-lg text-[#354f52] flex items-center gap-2">
                     <Languages className="w-5 h-5 text-[#bc6c25]" /> JFT-Basic Adjectives Course (ජේ.එෆ්.ටී. විශේෂණ පද)
@@ -1671,11 +2087,154 @@ export default function App() {
               </div>
             )}
           </div>
+        ) : (
+          <div className="max-w-xl mx-auto space-y-6">
+                
+            {/* Context/Assessment description box */}
+            <div className="bg-white dark:bg-slate-900 rounded-[24px] border border-[#e9e2d7] dark:border-slate-850 p-5 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <h3 className="font-display font-medium text-sm text-[#354f52] dark:text-emerald-300 flex items-center gap-1.5" id="adj-test-mode-title">
+                  <Sparkles className="w-4 h-4 text-[#bc6c25] animate-spin" /> Adjectives SRS Evaluation Deck (විශේෂණ පද පරීක්ෂණය)
+                </h3>
+                <p className="text-xs text-[#84a98c] dark:text-slate-400 mt-1 leading-relaxed">
+                  This deck is sorted based on Spaced Repetition weights. Click the card to flip and reveal its type (i/na adjective) and detailed translation. Mark "Yes" if you remembered it correctly, or "No" to review it more often.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={shuffleAdjTestDeck}
+                className="p-2.5 bg-[#f0ede6] dark:bg-slate-800 hover:bg-[#cad2c5]/40 border border-[#e9e2d7] dark:border-slate-700 hover:border-[#84a98c] text-[#52796f] dark:text-slate-200 rounded-xl transition duration-150 inline-flex items-center gap-1.5 text-xs font-bold shrink-0 shadow-xs cursor-pointer"
+                title="Shuffle Deck"
+              >
+                <Shuffle className="w-3.5 h-3.5" /> Shuffle
+              </button>
+            </div>
+
+            {adjTestDeck.length > 0 ? (
+              <div className="space-y-6">
+                
+                {/* Visual Tracker numbers progress */}
+                <div className="flex justify-between items-center px-1">
+                  <span className="text-xs font-bold text-[#84a98c] dark:text-slate-400 tracking-wider">
+                    DECK POSITION: <span className="font-mono text-[#2f3e46] dark:text-slate-200 bg-[#f0ede6] dark:bg-slate-850 px-2 py-0.5 rounded-md font-extrabold">{currentAdjTestIndex + 1}</span> / {adjTestDeck.length}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] uppercase font-bold text-[#84a98c] dark:text-slate-400 tracking-wider">
+                      Learned Status:
+                    </span>
+                    <span className="font-mono text-xs font-bold py-0.5 px-2 bg-[#f0ede6] dark:bg-slate-850 text-[#2f3e46] dark:text-slate-200 rounded-md">
+                      {adjectivesProgress[adjTestDeck[currentAdjTestIndex]?.id] || "UNSTUDIED"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Main animated check card container */}
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={adjTestDeck[currentAdjTestIndex].id}
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    transition={{ duration: 0.2 }}
+                    className="w-full"
+                  >
+                    <AdjectiveCardView
+                      key={adjTestDeck[currentAdjTestIndex].id}
+                      adjective={adjTestDeck[currentAdjTestIndex]}
+                      practiceMode={adjectivesPracticePerspective}
+                      status={adjectivesProgress[adjTestDeck[currentAdjTestIndex].id] || "UNSTUDIED"}
+                      onReveal={() => setIsAdjTestCardRevealed(true)}
+                      onStatusChange={(status) => handleUpdateAdjectiveStatus(adjTestDeck[currentAdjTestIndex].id, status)}
+                    />
+                  </motion.div>
+                </AnimatePresence>
+
+                {/* Prev, Next controls deck navigation buttons */}
+                <div className="grid grid-cols-2 gap-4">
+                  <button
+                    type="button"
+                    disabled={currentAdjTestIndex === 0}
+                    onClick={() => {
+                      if (currentAdjTestIndex > 0) {
+                        setCurrentAdjTestIndex(currentAdjTestIndex - 1);
+                        setIsAdjTestCardRevealed(false);
+                      }
+                    }}
+                    className="py-3 px-4 bg-white dark:bg-slate-900 hover:bg-[#f0ede6] dark:hover:bg-slate-850 disabled:bg-[#fdfbf7] dark:disabled:bg-slate-800 disabled:text-[#cad2c5] dark:disabled:text-slate-600 border border-[#e9e2d7] dark:border-slate-800 rounded-xl font-sans font-bold text-xs text-[#52796f] dark:text-slate-200 transition inline-flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <ArrowLeft className="w-4 h-4" /> PREVIOUS
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (currentAdjTestIndex < adjTestDeck.length - 1) {
+                        setCurrentAdjTestIndex(currentAdjTestIndex + 1);
+                        setIsAdjTestCardRevealed(false);
+                      } else {
+                        if (window.confirm("ඔබ අවසන් කාඩ්පත වෙත ළඟා වී ඇත! නැවත shuffle කිරීමට අවශ්‍ය ද? You reached the end. Re-shuffle the cards?")) {
+                          shuffleAdjTestDeck();
+                        }
+                      }
+                    }}
+                    className="py-3 px-4 bg-[#52796f] dark:bg-emerald-600 hover:bg-[#354f52] dark:hover:bg-emerald-700 text-white rounded-xl font-sans font-black text-xs transition inline-flex items-center justify-center gap-2 shadow-md hover:shadow-lg cursor-pointer"
+                  >
+                    NEXT <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Additional Quick Action buttons if card has been revealed */}
+                {isAdjTestCardRevealed && (
+                  <div className="p-4 bg-white dark:bg-slate-900 border border-[#e9e2d7] dark:border-slate-800 rounded-2xl shadow-sm text-center">
+                    <p className="text-xs font-bold text-[#52796f] dark:text-emerald-400 mb-2">Did you recall this adjective meaning correctly?</p>
+                    <div className="flex justify-center gap-3">
+                      <button
+                        onClick={() => {
+                          handleUpdateAdjectiveStatus(adjTestDeck[currentAdjTestIndex].id, "NOT_YET");
+                          if (currentAdjTestIndex < adjTestDeck.length - 1) {
+                            setTimeout(() => {
+                              setCurrentAdjTestIndex(prev => prev + 1);
+                              setIsAdjTestCardRevealed(false);
+                            }, 350);
+                          }
+                        }}
+                        className="py-2.5 px-4 bg-[#bc6c25] hover:bg-[#bc6c25]/90 text-white rounded-xl text-xs font-bold duration-150 inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+                      >
+                        <ThumbsDown className="w-3.5 h-3.5" /> No, forgot it
+                      </button>
+                      <button
+                        onClick={() => {
+                          handleUpdateAdjectiveStatus(adjTestDeck[currentAdjTestIndex].id, "OK");
+                          if (currentAdjTestIndex < adjTestDeck.length - 1) {
+                            setTimeout(() => {
+                              setCurrentAdjTestIndex(prev => prev + 1);
+                              setIsAdjTestCardRevealed(false);
+                            }, 350);
+                          }
+                        }}
+                        className="py-2.5 px-4 bg-[#52796f] dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white rounded-xl text-xs font-bold duration-150 inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+                      >
+                        <ThumbsUp className="w-3.5 h-3.5" /> Yes, remembered!
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-2xl border border-[#e9e2d7] dark:border-slate-800">
+                <p className="text-sm font-semibold text-[#84a98c]">Your study deck is currently empty.</p>
+              </div>
+            )}
+          </div>
         )}
+      </div>
+    </div>)}
 
         {/* TAB 4: STUDY GRAMMAR PATTERNS */}
         {activeTab === "grammar" && (
-          <div className="space-y-6" id="jft-grammar-section">
+          <div className="space-y-6" id="tab-panel-grammar">
+            <div className="space-y-6" id="jft-grammar-section">
             
             {/* Grammar Stats Metrics Row */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
@@ -1838,51 +2397,75 @@ export default function App() {
               </div>
             )}
           </div>
-        )}
+        </div>)}
 
         {/* TAB 5: ADVANCED MULTIPLE CHOICE SUPER QUIZ */}
         {activeTab === "quiz" && (
-          <QuizView
-            kanjiCards={cards}
-            verbsList={verbs}
-            adjectivesList={adjectives}
-            onBackToLearn={() => setActiveTab("learn")}
-          />
+          <div id="tab-panel-quiz">
+            <QuizView
+              kanjiCards={cards}
+              verbsList={verbs}
+              adjectivesList={adjectives}
+              onBackToLearn={() => setActiveTab("learn")}
+            />
+          </div>
         )}
 
         {/* TAB 6: JFT VOCABULARY DICTIONARY */}
         {activeTab === "dictionary" && (
-          <DictionaryView />
+          <div id="tab-panel-dictionary">
+            <DictionaryView />
+          </div>
         )}
 
         {/* TAB 7: JFT PROGRESS STATISTICS */}
         {activeTab === "stats" && (
-          <StatisticsView
-            kanjiCards={cards}
-            kanjiProgress={progress}
-            verbsList={verbs}
-            verbsProgress={verbsProgress}
-            adjectivesList={adjectives}
-            adjectivesProgress={adjectivesProgress}
-            grammarList={grammarList}
-            grammarProgress={grammarProgress}
-          />
+          <div id="tab-panel-stats">
+            <StatisticsView
+              kanjiCards={cards}
+              kanjiProgress={progress}
+              verbsList={verbs}
+              verbsProgress={verbsProgress}
+              adjectivesList={adjectives}
+              adjectivesProgress={adjectivesProgress}
+              grammarList={grammarList}
+              grammarProgress={grammarProgress}
+              onClearProgress={(category) => {
+                if (category === "kanji" || category === "all") {
+                  setProgress({});
+                  localStorage.removeItem("jft_kanji_progress");
+                }
+                if (category === "verbs" || category === "all") {
+                  setVerbsProgress({});
+                  localStorage.removeItem("jft_verbs_progress");
+                }
+                if (category === "adjectives" || category === "all") {
+                  setAdjectivesProgress({});
+                  localStorage.removeItem("jft_adjectives_progress");
+                }
+                if (category === "grammar" || category === "all") {
+                  setGrammarProgress({});
+                  localStorage.removeItem("jft_grammar_progress");
+                }
+              }}
+            />
+          </div>
         )}
       </main>
 
 
-      {/* Humid Footer context */}
-      <footer className="bg-[#2f3e46] text-[#cad2c5] py-8 border-t border-[#e9e2d7]/20 mt-12 text-center text-xs">
-        <div className="max-w-7xl mx-auto px-4 space-y-2">
-          <p className="font-semibold text-white font-display">JFT & N4 Learning Helper</p>
-          <p className="text-[11px] text-white/90 bg-[#354f52] inline-block px-4 py-1.5 rounded-full border border-white/5 font-bold uppercase tracking-wider mt-1 shadow-xs">
-            💻 Developed by: <span className="text-amber-300 font-extrabold font-sans">H.D. Rusith Heshan Induwara</span>
+      {/* Cozy, Soft Light Theme Footer */}
+      <footer className="bg-[#f0ede6] text-[#352d28] py-10 border-t-2 border-[#e9e2d7] mt-12 text-center text-xs">
+        <div className="max-w-7xl mx-auto px-4 space-y-2.5">
+          <p className="font-extrabold text-[#52796f] font-display text-sm tracking-wide">JFT & N4 Learning Helper</p>
+          <p className="text-[11px] text-[#bc6c25] bg-[#ece2d0] inline-block px-4 py-1.5 rounded-full border border-[#e9e2d7] font-bold uppercase tracking-wider mt-1 shadow-3xs">
+            💻 Developed by: <span className="text-[#233d30] font-black font-sans">H.D. Rusith Heshan Induwara</span>
           </p>
-          <p className="text-[10px] text-[#84a98c] mt-2">
+          <p className="text-[10px] text-[#52796f]/80 mt-2 font-semibold">
             Powered by Node.js Server Environment, Express APIs & Google Gemini AI Core
           </p>
-          <p className="text-[10px] text-[#ece2d0] font-sans mt-3">
-            ❤️ JFT විභාගය ජයගැනීමට අපෙන් සුභපැතුම්! (Created for & by H.D. Rusith Heshan Induwara)
+          <p className="text-[11px] text-[#bc6c25] font-black mt-3">
+            ❤️ JFT සහ JLPT විභාග ජයගැනීමට අපෙන් උණුසුම් සුභපැතුම්! ❤️
           </p>
         </div>
       </footer>

@@ -435,41 +435,130 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
     }
   };
 
+  // Helper to find distinct Japanese voices from window.speechSynthesis
+  const getDistinctJapaneseVoices = () => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      return { voiceA: null, voiceB: null };
+    }
+    const voices = window.speechSynthesis.getVoices();
+    const jaVoices = voices.filter(
+      (v) => v.lang.toLowerCase().includes("ja") || v.lang.toLowerCase().includes("jp")
+    );
+
+    let voiceA: SpeechSynthesisVoice | null = null; // Speaker A (Female by default)
+    let voiceB: SpeechSynthesisVoice | null = null; // Speaker B (Male by default)
+
+    // Look for Female
+    voiceA =
+      jaVoices.find((v) => {
+        const name = v.name.toLowerCase();
+        return (
+          name.includes("nanami") ||
+          name.includes("kyoko") ||
+          name.includes("ayumi") ||
+          name.includes("haruka") ||
+          name.includes("sayaka") ||
+          name.includes("female") ||
+          name.includes("shiori") ||
+          name.includes("mayu")
+        );
+      }) || null;
+
+    // Look for Male
+    voiceB =
+      jaVoices.find((v) => {
+        const name = v.name.toLowerCase();
+        return (
+          name.includes("keita") ||
+          name.includes("ichiro") ||
+          name.includes("otoya") ||
+          name.includes("naoki") ||
+          name.includes("male") ||
+          name.includes("guy") ||
+          name.includes("man")
+        );
+      }) || null;
+
+    if (!voiceA && jaVoices.length > 0) {
+      voiceA = jaVoices[0];
+    }
+    if (!voiceB && jaVoices.length > 1) {
+      voiceB = jaVoices[1];
+    } else if (!voiceB && jaVoices.length > 0) {
+      voiceB = jaVoices[0];
+    }
+
+    return { voiceA, voiceB };
+  };
+
+  // Speaks a specific dialogue line using distinct character speech settings
+  const speakSingleConversationLine = (japaneseText: string, speaker: "A" | "B") => {
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      const cleanText = japaneseText.split("(")[0].split("（")[0].trim();
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      utterance.lang = "ja-JP";
+
+      const { voiceA, voiceB } = getDistinctJapaneseVoices();
+      const isVoiceA = speaker === "A";
+
+      if (isVoiceA) {
+        if (voiceA) utterance.voice = voiceA;
+        utterance.pitch = 1.25; // Bright, high pitch speaker (Female)
+        utterance.rate = 0.90;  // Standard pace
+      } else {
+        if (voiceB) utterance.voice = voiceB;
+        utterance.pitch = 0.70; // Deeper, low pitch speaker (Male)
+        utterance.rate = 0.82;  // Slightly deliberate rate
+      }
+
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
   // Speaks entire paragraph text
   const speakParagraphText = (paragraph: JFTParagraph) => {
     if ("speechSynthesis" in window) {
       window.speechSynthesis.cancel();
 
       if (paragraph.contentType === "conversation" && paragraph.textLines && paragraph.textLines.length > 0) {
-        // Fetch any Japanese voices to distinguish characters further if available
-        const voices = window.speechSynthesis.getVoices();
-        const jaVoices = voices.filter(v => v.lang.toLowerCase().includes("ja"));
-
-        paragraph.textLines.forEach((line, index) => {
+        const { voiceA, voiceB } = getDistinctJapaneseVoices();
+        
+        let index = 0;
+        const playNext = () => {
+          if (index >= paragraph.textLines!.length) return;
+          const line = paragraph.textLines![index];
           const isA = line.speaker === "A" || index % 2 === 0;
           const cleanText = line.japanese.split("(")[0].split("（")[0].trim();
+          
           const utterance = new SpeechSynthesisUtterance(cleanText);
           utterance.lang = "ja-JP";
-
-          // Differentiate tone
+          
           if (isA) {
-            utterance.pitch = 1.15; // Higher, brighter tone
-            utterance.rate = 0.85; // Faster natural speed
-            if (jaVoices.length > 0) {
-              utterance.voice = jaVoices[0];
-            }
+            if (voiceA) utterance.voice = voiceA;
+            utterance.pitch = 1.25; // Bright female tone
+            utterance.rate = 0.90;
           } else {
-            utterance.pitch = 0.80; // Deeper, lower tone
-            utterance.rate = 0.78; // Slightly slower, different pacing
-            if (jaVoices.length > 1) {
-              utterance.voice = jaVoices[1];
-            } else if (jaVoices.length > 0) {
-              utterance.voice = jaVoices[0];
-            }
+            if (voiceB) utterance.voice = voiceB;
+            utterance.pitch = 0.70; // Rich male tone
+            utterance.rate = 0.82;
           }
-
+          
+          utterance.onend = () => {
+            index++;
+            // Small natural pause of 450ms before responding
+            setTimeout(playNext, 450);
+          };
+          
+          utterance.onerror = () => {
+            index++;
+            setTimeout(playNext, 450);
+          };
+          
           window.speechSynthesis.speak(utterance);
-        });
+        };
+        
+        playNext();
       } else {
         const stringText = paragraph.tokens.map(t => t.text).join("");
         const utterance = new SpeechSynthesisUtterance(stringText);
@@ -1257,6 +1346,15 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
                                 <span className="text-[10px] font-bold text-slate-400">
                                   Speaker {line.speaker || (isSpeakerA ? "A" : "B")}
                                 </span>
+                                <button
+                                  type="button"
+                                  onClick={() => speakSingleConversationLine(line.japanese, isSpeakerA ? "A" : "B")}
+                                  className="p-1 px-1.5 text-[#52796f] dark:text-amber-400 hover:text-white hover:bg-[#52796f] dark:hover:bg-slate-700 rounded-md transition duration-150 cursor-pointer flex items-center gap-1 text-[9px] bg-[#f0ede6]/40 dark:bg-slate-800"
+                                  title="හඬ සවන් දෙන්න (Listen to original)"
+                                >
+                                  <Volume2 className="w-2.5 h-2.5" />
+                                  <span>🔊 Speak</span>
+                                </button>
                               </div>
 
                               <div className={`p-4 rounded-2xl max-w-[85%] border shadow-xs transition hover:shadow-xs space-y-1.5 ${

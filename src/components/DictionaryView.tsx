@@ -2,6 +2,10 @@ import { useState, useMemo } from "react";
 import { Search, Globe2, BookOpen, Volume2, Sparkles, HelpCircle, Check, BookMarked, Info } from "lucide-react";
 import { DictionaryEntry } from "../types";
 import { PRELOADED_DICTIONARY } from "../data/preloadedDictionary";
+import { PRELOADED_KANJI } from "../data/preloadedKanji";
+import { PRELOADED_VERBS } from "../data/preloadedVerbs";
+import { PRELOADED_ADJECTIVES } from "../data/preloadedAdjectives";
+import { PRELOADED_GRAMMAR } from "../data/preloadedGrammar";
 
 export default function DictionaryView() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -35,20 +39,85 @@ export default function DictionaryView() {
     setTimeout(() => setCopiedId(null), 1500);
   };
 
+  // Compile a unified, comprehensive search collection
+  const allDictionaryEntries = useMemo(() => {
+    // 1. Initial preloaded dataset
+    const combined: DictionaryEntry[] = [...PRELOADED_DICTIONARY];
+
+    // 2. Add Kanji cards mapped as dictionary entries
+    PRELOADED_KANJI.forEach((k) => {
+      combined.push({
+        id: `kanji-${k.id}`,
+        romaji: k.kunyomi || k.onyomi || "",
+        kanji: k.kanji,
+        hiragana: k.furigana,
+        onyomi: k.onyomi,
+        kunyomi: k.kunyomi,
+        sinhalaMeaning: k.sinhalaMeaning,
+        englishMeaning: k.englishMeaning || "Kanji Meaning",
+        searchKeywords: ["kanji", "character", "letter", k.sinhalaMeaning, k.englishMeaning, k.furigana, k.kunyomi]
+      });
+    });
+
+    // 3. Add Verbs mapped as dictionary entries
+    PRELOADED_VERBS.forEach((v) => {
+      combined.push({
+        id: `verb-${v.id}`,
+        romaji: v.dictionary,
+        kanji: v.kanji,
+        hiragana: `${v.furigana} (masu: ${v.masu})`,
+        onyomi: "Verb (ක්‍රියාපද)",
+        kunyomi: `te: ${v.te}, nai: ${v.nai}, ta: ${v.ta}`,
+        sinhalaMeaning: v.sinhalaMeaning,
+        englishMeaning: "Verb action / activity",
+        searchKeywords: ["verb", "action", "activity", v.sinhalaMeaning, v.dictionary, v.masu, v.te, v.nai, "kriyapada", "kriyapadha"]
+      });
+    });
+
+    // 4. Add Adjectives mapped as dictionary entries
+    PRELOADED_ADJECTIVES.forEach((a) => {
+      combined.push({
+        id: `adj-${a.id}`,
+        romaji: a.hiragana,
+        kanji: a.kanji || a.hiragana,
+        hiragana: a.hiragana,
+        onyomi: `Adjective (${a.type})`,
+        kunyomi: `type: ${a.type}`,
+        sinhalaMeaning: a.sinhalaMeaning,
+        englishMeaning: "Adjective descriptor",
+        searchKeywords: ["adjective", "descriptor", a.sinhalaMeaning, a.hiragana, "viseshana", "visheshana"]
+      });
+    });
+
+    // 5. Add Grammar rules mapped as dictionary entries
+    PRELOADED_GRAMMAR.forEach((g) => {
+      combined.push({
+        id: `grammar-${g.id}`,
+        romaji: g.romaji,
+        kanji: g.title,
+        hiragana: g.pattern,
+        onyomi: "Grammar (ව්‍යාකරණ)",
+        kunyomi: g.oftenUsed || "Grammar pattern",
+        sinhalaMeaning: g.sinhalaExplanation,
+        englishMeaning: g.englishExplanation,
+        searchKeywords: ["grammar", "pattern", g.sinhalaExplanation, g.englishExplanation, g.pattern, g.romaji, "vyakarana"]
+      });
+    });
+
+    return combined;
+  }, []);
+
   // Perform multi-dimensional search across hiragana, romaji, kanji, english, sinhala meanings & search keywords
   const filteredEntries = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return PRELOADED_DICTIONARY;
+    if (!query) return allDictionaryEntries;
 
-    return PRELOADED_DICTIONARY.filter((item) => {
-      // 1. Direct checks
+    return allDictionaryEntries.filter((item) => {
       const matchesRomaji = item.romaji.toLowerCase().includes(query);
       const matchesKanji = item.kanji.toLowerCase().includes(query);
       const matchesHiragana = item.hiragana.toLowerCase().includes(query);
       const matchesEnglish = item.englishMeaning.toLowerCase().includes(query);
       const matchesSinhala = item.sinhalaMeaning.toLowerCase().includes(query);
-      
-      // 2. Extra keywords/Singlish matches
       const matchesKeywords = item.searchKeywords?.some((kw) => kw.toLowerCase().includes(query));
 
       return (
@@ -60,7 +129,12 @@ export default function DictionaryView() {
         matchesKeywords
       );
     });
-  }, [searchQuery]);
+  }, [searchQuery, allDictionaryEntries]);
+
+  // Paginated/sliced search results to keep typing and rendering extremely fast and responsive
+  const displayedEntries = useMemo(() => {
+    return filteredEntries.slice(0, 150);
+  }, [filteredEntries]);
 
   return (
     <div className="space-y-6">
@@ -68,13 +142,13 @@ export default function DictionaryView() {
       <div className="flex flex-col md:flex-row md:items-center justify-between border-b pb-6 border-dashed border-[#e9e2d7] gap-4">
         <div className="space-y-1.5">
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black bg-teal-50 text-teal-750 uppercase tracking-wider border border-teal-100">
-            <BookMarked className="w-3.5 h-3.5 text-teal-600" /> Interactive JFT Dictionary • ජපන් ශබ්දකෝෂය
+            <BookMarked className="w-3.5 h-3.5 text-teal-600" /> Unified JFT & N4 Dictionary • බහුභාෂා ශබ්දකෝෂය
           </span>
           <h2 className="text-3xl font-black text-slate-800 font-display tracking-tight">
-            Irodori Book Vocabulary Dictionary
+            Comprehensive Vocabulary & Grammar Search
           </h2>
           <p className="text-sm text-slate-500 font-semibold">
-            Search 1000+ vital Japanese daily words using Kanji, Hiragana, Romaji, English, Sinhala, or phonetics instantly!
+            Search thousands of Japanese words, Kanji, verbs conjugations, adjectives, and grammar rules using English, Sinhala, Romaji, Hiragana, or Singlish keywords instantly!
           </p>
         </div>
       </div>
@@ -87,7 +161,7 @@ export default function DictionaryView() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="සොයන්න: Type anything (e.g. 'arigatou', 'ස්තූතියි', 'greetings', '挨拶', 'あめ', 'vassa'...)"
+            placeholder="සොයන්න: Type anything (e.g. 'tree', 'gasa', 'ki', 'ගස', 'tabenai', 'arigatou', 'ස්තූතියි'...)"
             className="w-full text-sm rounded-2xl border border-[#e9e2d7] pl-12 pr-4 py-3.5 bg-[#fdfbf7] focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-teal-600/10 focus:border-teal-600 font-semibold"
           />
         </div>
@@ -100,9 +174,9 @@ export default function DictionaryView() {
       </div>
 
       {/* Dictionary Grid List Grid layout */}
-      {filteredEntries.length > 0 ? (
+      {displayedEntries.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredEntries.map((item) => (
+          {displayedEntries.map((item) => (
             <div
               key={item.id}
               className="bg-white border border-[#e9e2d7] rounded-3xl p-5 hover:shadow-md hover:border-teal-500/30 transition-all duration-200 flex flex-col justify-between h-[250px] relative overflow-hidden group"

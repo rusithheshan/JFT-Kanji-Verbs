@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
-import { Check, AlertCircle, BookOpen, Volume2, ArrowLeftRight, HelpCircle } from "lucide-react";
+import { motion } from "motion/react";
+import { Check, AlertCircle, BookOpen, Volume2, ArrowLeftRight } from "lucide-react";
 import { JFTVerb } from "../data/preloadedVerbs";
 import { LearningStatus } from "../types";
 
@@ -10,6 +10,7 @@ interface VerbCardViewProps {
   practiceMode: "sinhala" | "japanese";
   status: LearningStatus;
   onStatusChange?: (newStatus: LearningStatus) => void;
+  onReveal?: () => void;
 }
 
 export default function VerbCardView({
@@ -17,6 +18,7 @@ export default function VerbCardView({
   practiceMode,
   status,
   onStatusChange,
+  onReveal,
 }: VerbCardViewProps) {
   const [isFlipped, setIsFlipped] = useState(false);
 
@@ -35,11 +37,11 @@ export default function VerbCardView({
   const getStatusColor = () => {
     switch (status) {
       case "OK":
-        return "border-[#52796f] border-b-8 bg-white";
+        return "border-[#52796f] border-b-8 bg-white text-slate-900";
       case "NOT_YET":
-        return "border-[#bc6c25] border-b-8 bg-white";
+        return "border-[#bc6c25] border-b-8 bg-white text-slate-900";
       default:
-        return "border-[#e9e2d7] border-b-8 bg-white";
+        return "border-[#e9e2d7] border-b-8 bg-white text-slate-900";
     }
   };
 
@@ -76,7 +78,13 @@ export default function VerbCardView({
         animate={{ rotateY: isFlipped ? 180 : 0 }}
         transition={{ duration: 0.6, ease: "easeInOut" }}
         style={{ transformStyle: "preserve-3d" }}
-        onClick={() => setIsFlipped(!isFlipped)}
+        onClick={() => {
+          const nextFlipped = !isFlipped;
+          setIsFlipped(nextFlipped);
+          if (nextFlipped && onReveal) {
+            onReveal();
+          }
+        }}
         className={`w-full min-h-[480px] rounded-[32px] border-2 shadow-sm cursor-pointer relative select-none flex flex-col justify-between p-6 ${getStatusColor()}`}
       >
         {/* --- FRONT SIDE --- */}
@@ -113,7 +121,7 @@ export default function VerbCardView({
                 </h3>
               </div>
             ) : (
-              // Japanese front (shows only Kanji + Furigana reading without detailed meaning or forms)
+              // Japanese front
               <div className="text-center space-y-4 relative w-full">
                 <div className="absolute inset-0 bg-[#cad2c5] rounded-full blur-2xl opacity-15 scale-120"></div>
                 <div className="relative">
@@ -181,27 +189,27 @@ export default function VerbCardView({
             <div className="grid grid-cols-2 gap-2 mt-2">
               <div className="p-2 bg-[#fdfbf7] rounded-xl border border-[#e9e2d7] flex flex-col">
                 <span className="text-[9px] font-bold text-[#84a98c] uppercase tracking-wider">masu (මසු)</span>
-                <span className="font-mono text-xs font-extrabold text-[#52796f] mt-0.5" dir="ltr">{verb.masu}</span>
+                <span className="font-mono text-xs font-extrabold text-[#52796f] mt-0.5 dir-ltr">{verb.masu}</span>
               </div>
               <div className="p-2 bg-[#fdfbf7] rounded-xl border border-[#e9e2d7] flex flex-col">
                 <span className="text-[9px] font-bold text-[#84a98c] uppercase tracking-wider">Dictionary (මූලික)</span>
-                <span className="font-mono text-xs font-extrabold text-[#52796f] mt-0.5" dir="ltr">{verb.dictionary}</span>
+                <span className="font-mono text-xs font-extrabold text-[#52796f] mt-0.5 dir-ltr">{verb.dictionary}</span>
               </div>
               <div className="p-2 bg-[#fdfbf7] rounded-xl border border-[#e9e2d7] flex flex-col">
                 <span className="text-[9px] font-bold text-[#84a98c] uppercase tracking-wider">nai (නැත)</span>
-                <span className="font-mono text-xs font-extrabold text-[#bc6c25] mt-0.5" dir="ltr">{verb.nai}</span>
+                <span className="font-mono text-xs font-extrabold text-[#bc6c25] mt-0.5 dir-ltr">{verb.nai}</span>
               </div>
               <div className="p-2 bg-[#fdfbf7] rounded-xl border border-[#e9e2d7] flex flex-col">
                 <span className="text-[9px] font-bold text-[#84a98c] uppercase tracking-wider">ta (අතීත ඇත)</span>
-                <span className="font-mono text-xs font-extrabold text-[#52796f] mt-0.5" dir="ltr">{verb.ta}</span>
+                <span className="font-mono text-xs font-extrabold text-[#52796f] mt-0.5 dir-ltr">{verb.ta}</span>
               </div>
               <div className="p-2 bg-[#fdfbf7] rounded-xl border border-[#e9e2d7] flex flex-col col-span-2">
                 <span className="text-[9px] font-bold text-[#84a98c] uppercase tracking-wider">nakatta (අතීත නැත)</span>
-                <span className="font-mono text-xs font-extrabold text-[#bc6c25] mt-0.5" dir="ltr">{verb.nakatta}</span>
+                <span className="font-mono text-xs font-extrabold text-[#bc6c25] mt-0.5 dir-ltr">{verb.nakatta}</span>
               </div>
               <div className="p-2 bg-[#fdfbf7] rounded-xl border border-[#e9e2d7] flex flex-col col-span-2">
                 <span className="text-[9px] font-bold text-[#84a98c] uppercase tracking-wider">te (te form)</span>
-                <span className="font-mono text-xs font-extrabold text-[#52796f] mt-0.5" dir="ltr">{verb.te}</span>
+                <span className="font-mono text-xs font-extrabold text-[#52796f] mt-0.5 dir-ltr">{verb.te}</span>
               </div>
             </div>
           </div>
@@ -216,7 +224,7 @@ export default function VerbCardView({
                   onStatusChange("NOT_YET");
                   setIsFlipped(false);
                 }}
-                className={`py-1.5 px-2 rounded-xl text-[11px] font-extrabold transition-all duration-150 ${
+                className={`py-1.5 px-2 rounded-xl text-[11px] font-extrabold transition-all duration-150 cursor-pointer ${
                   status === "NOT_YET"
                     ? "bg-[#bc6c25] text-white shadow-xs"
                     : "bg-[#ece2d0] text-[#bc6c25] hover:bg-[#ece2d0]/80"
@@ -231,7 +239,7 @@ export default function VerbCardView({
                   onStatusChange("OK");
                   setIsFlipped(false);
                 }}
-                className={`py-1.5 px-2 rounded-xl text-[11px] font-extrabold transition-all duration-150 ${
+                className={`py-1.5 px-2 rounded-xl text-[11px] font-extrabold transition-all duration-150 cursor-pointer ${
                   status === "OK"
                     ? "bg-[#52796f] text-white shadow-xs"
                     : "bg-[#f0ede6] text-[#52796f] hover:bg-[#e9e2d7]"

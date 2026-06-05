@@ -1,7 +1,9 @@
 import React, { MouseEvent, useState } from "react";
 import { motion } from "motion/react";
-import { Check, AlertCircle, BookOpen, Volume2, ArrowRight } from "lucide-react";
+import { Check, AlertCircle, BookOpen, Volume2, ArrowRight, Sparkles } from "lucide-react";
 import { KanjiCard, LearningStatus } from "../types";
+
+// KanjiCardView Component - Displays individual Kanji learning cards with flipping effect and personal notes tracker
 
 interface KanjiCardViewProps {
   key?: React.Key;
@@ -22,16 +24,24 @@ export default function KanjiCardView({
   onReveal,
 }: KanjiCardViewProps) {
   const [isFlipped, setIsFlipped] = useState(false);
+  const [note, setNote] = useState<string>(() => {
+    return localStorage.getItem(`jft_note_${card.id}`) || "";
+  });
 
-  // Determine border color based on status
+  const handleNoteChange = (newVal: string) => {
+    setNote(newVal);
+    localStorage.setItem(`jft_note_${card.id}`, newVal);
+  };
+
+  // Determine border and background styles based on status and theme (Light-Theme only)
   const getStatusColor = () => {
     switch (status) {
       case "OK":
-        return "border-[#52796f] bg-white";
+        return "border-[#52796f] bg-white text-[#2f3e46]";
       case "NOT_YET":
-        return "border-[#bc6c25] bg-white";
+        return "border-[#bc6c25] bg-white text-[#2f3e46]";
       default:
-        return "border-[#e9e2d7] bg-white";
+        return "border-[#e9e2d7] bg-white text-[#2f3e46]";
     }
   };
 
@@ -77,7 +87,7 @@ export default function KanjiCardView({
     return (
       <div
         id={`kanji-card-test-${card.id}`}
-        className={`relative flex flex-col justify-between w-full min-h-[460px] p-6 rounded-[32px] border-2 transition-all duration-300 shadow-sm cursor-pointer border-b-8 ${getStatusColor()}`}
+        className={`relative flex flex-col justify-between w-full min-h-[490px] p-6 rounded-[32px] border-2 transition-all duration-300 shadow-sm cursor-pointer border-b-8 ${getStatusColor()}`}
         onClick={() => {
           if (!isRevealed && onReveal) {
             onReveal();
@@ -122,7 +132,7 @@ export default function KanjiCardView({
               </span>
 
               <div className="relative my-4 flex flex-col items-center">
-                <div className="absolute inset-0 bg-[#cad2c5] rounded-full blur-3xl opacity-30 scale-110"></div>
+                <div className="absolute inset-0 bg-[#cad2c5] rounded-full blur-3xl opacity-35 scale-110"></div>
                 <div className="relative text-7xl font-bold text-center text-[#2f3e46] tracking-wide font-sans select-all">
                   {card.kanji}
                 </div>
@@ -148,7 +158,7 @@ export default function KanjiCardView({
               </div>
             </div>
 
-            <div className="mt-5 space-y-3.5 border-t border-[#e9e2d7] pt-4 text-center">
+            <div className="mt-4 space-y-3 border-t border-[#e9e2d7] pt-3 text-center">
               <div className="flex flex-col items-center">
                 <span className="text-[9px] uppercase tracking-wider text-[#84a98c] font-black mb-0.5">
                   Sinhala අර්ථය
@@ -168,15 +178,29 @@ export default function KanjiCardView({
               </div>
             </div>
 
+            {/* PERSISTENT QUICK NOTE */}
+            <div className="mt-4 pt-3 border-t border-dashed border-[#e9e2d7] w-full text-left" onClick={(e) => e.stopPropagation()}>
+              <label className="text-[9px] uppercase tracking-wider text-[#84a98c] font-black block mb-1">
+                Quick Note (පෞද්ගලික සටහන්):
+              </label>
+              <textarea
+                value={note}
+                onChange={(e) => handleNoteChange(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                placeholder="ලියා ගන්න විශේෂ සටහනක් (Type your study notes here)..."
+                className="w-full text-[11px] p-2 rounded-xl border border-[#e9e2d7] bg-[#fdfbf7] text-[#2f3e46] placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#52796f] resize-none h-14 font-medium"
+              />
+            </div>
+
             {onStatusChange && (
-              <div className="grid grid-cols-2 gap-3 mt-5 pt-4 border-t border-[#e9e2d7]">
+              <div className="grid grid-cols-2 gap-3 mt-4 pt-3 border-t border-[#e9e2d7]">
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     onStatusChange("NOT_YET");
                   }}
-                  className={`w-full py-2.5 px-3 rounded-xl font-sans font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1.5 ${
+                  className={`w-full py-2.5 px-3 rounded-xl font-sans font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer ${
                     status === "NOT_YET"
                       ? "bg-[#bc6c25] text-white shadow-md shadow-[#bc6c25]/20"
                       : "bg-[#ece2d0] text-[#bc6c25]"
@@ -190,7 +214,7 @@ export default function KanjiCardView({
                     e.stopPropagation();
                     onStatusChange("OK");
                   }}
-                  className={`w-full py-2.5 px-3 rounded-xl font-sans font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1.5 ${
+                  className={`w-full py-2.5 px-3 rounded-xl font-sans font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer ${
                     status === "OK"
                       ? "bg-[#52796f] text-white shadow-md shadow-[#52796f]/20"
                       : "bg-[#f0ede6] text-[#52796f]"
@@ -210,14 +234,14 @@ export default function KanjiCardView({
   return (
     <div
       onClick={() => setIsFlipped(!isFlipped)}
-      className="perspective-1000 w-full min-h-[460px] cursor-pointer relative"
+      className="perspective-1000 w-full min-h-[490px] cursor-pointer relative"
       id={`kanji-card-${card.id}`}
     >
       <motion.div
         animate={{ rotateY: isFlipped ? 180 : 0 }}
         transition={{ duration: 0.6, ease: "easeInOut" }}
         style={{ transformStyle: "preserve-3d" }}
-        className={`w-full min-h-[460px] rounded-[36px] border-2 border-b-8 shadow-sm flex flex-col justify-between p-6 ${getStatusColor()}`}
+        className={`w-full min-h-[490px] rounded-[36px] border-2 border-b-8 shadow-sm flex flex-col justify-between p-6 ${getStatusColor()}`}
       >
         {/* FRONT SIDE */}
         <div
@@ -272,6 +296,15 @@ export default function KanjiCardView({
                 </span>
               </div>
             </div>
+
+            {/* Note trace indication on Front if it exists */}
+            {note.trim() && (
+              <div className="mt-3.5 px-3 py-1 bg-amber-50/50 border border-amber-200/50 rounded-xl max-w-[200px] text-center">
+                <p className="text-[10px] font-bold text-amber-700 truncate">
+                  💡 Note saved: "{note}"
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="w-full text-center border-t border-[#f0ede6] pt-3 flex items-center justify-center gap-1 text-[11px] font-black text-[#52796f] hover:text-[#bc6c25] transition-colors">
@@ -281,7 +314,7 @@ export default function KanjiCardView({
 
         {/* BACK SIDE */}
         <div
-          className="absolute inset-0 p-6 flex flex-col justify-between overflow-y-auto"
+          className="absolute inset-0 p-6 flex flex-col justify-between overflow-y-auto custom-scrollbar"
           style={{
             backfaceVisibility: "hidden",
             WebkitBackfaceVisibility: "hidden",
@@ -297,7 +330,7 @@ export default function KanjiCardView({
               <button
                 type="button"
                 onClick={() => setIsFlipped(false)}
-                className="text-[10px] bg-[#f0ede6] font-black hover:bg-[#cad2c5] px-2.5 py-1 rounded-lg text-[#354f52] transition-colors"
+                className="text-[10px] bg-[#f0ede6] font-black hover:bg-[#cad2c5] px-2.5 py-1 rounded-lg text-[#354f52] transition-colors cursor-pointer"
               >
                 ◀ ආපසු හරවන්න
               </button>
@@ -313,7 +346,7 @@ export default function KanjiCardView({
             </div>
           </div>
 
-          <div className="flex-1 py-3 text-center space-y-4">
+          <div className="flex-1 py-3 text-center space-y-3">
             <div className="space-y-1">
               <span className="text-[10px] uppercase tracking-wider text-[#84a98c] font-black block">
                 Sinhala අර්ථය
@@ -330,6 +363,20 @@ export default function KanjiCardView({
               <p className="text-sm font-semibold text-[#52796f] font-display">
                 {card.englishMeaning}
               </p>
+            </div>
+
+            {/* PERSISTENT QUICK NOTE */}
+            <div className="mt-3.5 text-left w-full px-1" onClick={(e) => e.stopPropagation()}>
+              <label className="text-[9px] uppercase tracking-wider text-[#84a98c] font-black block mb-1">
+                Quick Note (පෞද්ගලික සටහන්):
+              </label>
+              <textarea
+                value={note}
+                onChange={(e) => handleNoteChange(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                placeholder="ලියා ගන්න විශේෂ සටහනක් (Type your study notes here)..."
+                className="w-full text-[11px] p-2 rounded-xl border border-[#e9e2d7] bg-[#fdfbf7] text-[#2f3e46] placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#52796f] resize-none h-14 font-medium"
+              />
             </div>
           </div>
 

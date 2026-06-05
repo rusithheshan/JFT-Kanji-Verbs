@@ -10,6 +10,7 @@ interface AdjectiveCardViewProps {
   practiceMode: "sinhala" | "japanese";
   status: LearningStatus;
   onStatusChange?: (newStatus: LearningStatus) => void;
+  onReveal?: () => void;
 }
 
 export default function AdjectiveCardView({
@@ -17,6 +18,7 @@ export default function AdjectiveCardView({
   practiceMode,
   status,
   onStatusChange,
+  onReveal,
 }: AdjectiveCardViewProps) {
   const [isFlipped, setIsFlipped] = useState(false);
 
@@ -35,11 +37,11 @@ export default function AdjectiveCardView({
   const getStatusColor = () => {
     switch (status) {
       case "OK":
-        return "border-[#52796f] border-b-8 bg-white";
+        return "border-[#52796f] border-b-8 bg-white text-slate-900";
       case "NOT_YET":
-        return "border-[#bc6c25] border-b-8 bg-white";
+        return "border-[#bc6c25] border-b-8 bg-white text-slate-900";
       default:
-        return "border-[#e9e2d7] border-b-8 bg-white";
+        return "border-[#e9e2d7] border-b-8 bg-white text-slate-900";
     }
   };
 
@@ -76,7 +78,13 @@ export default function AdjectiveCardView({
         animate={{ rotateY: isFlipped ? 180 : 0 }}
         transition={{ duration: 0.6, ease: "easeInOut" }}
         style={{ transformStyle: "preserve-3d" }}
-        onClick={() => setIsFlipped(!isFlipped)}
+        onClick={() => {
+          const nextFlipped = !isFlipped;
+          setIsFlipped(nextFlipped);
+          if (nextFlipped && onReveal) {
+            onReveal();
+          }
+        }}
         className={`w-full min-h-[360px] rounded-[32px] border-2 shadow-sm cursor-pointer relative select-none flex flex-col justify-between p-6 ${getStatusColor()}`}
       >
         {/* --- FRONT SIDE --- */}
@@ -193,7 +201,7 @@ export default function AdjectiveCardView({
                   onStatusChange("NOT_YET");
                   setIsFlipped(false);
                 }}
-                className={`py-1.5 px-2 rounded-xl text-[11px] font-extrabold transition-all duration-150 ${
+                className={`py-1.5 px-2 rounded-xl text-[11px] font-extrabold transition-all duration-150 cursor-pointer ${
                   status === "NOT_YET"
                     ? "bg-[#bc6c25] text-white shadow-xs"
                     : "bg-[#ece2d0] text-[#bc6c25] hover:bg-[#ece2d0]/80"
@@ -208,7 +216,7 @@ export default function AdjectiveCardView({
                   onStatusChange("OK");
                   setIsFlipped(false);
                 }}
-                className={`py-1.5 px-2 rounded-xl text-[11px] font-extrabold transition-all duration-150 ${
+                className={`py-1.5 px-2 rounded-xl text-[11px] font-extrabold transition-all duration-150 cursor-pointer ${
                   status === "OK"
                     ? "bg-[#52796f] text-white shadow-xs"
                     : "bg-[#f0ede6] text-[#52796f] hover:bg-[#e9e2d7]"
