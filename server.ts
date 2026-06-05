@@ -164,10 +164,44 @@ Ensure your output is a strictly formatted JSON array containing all processed e
     }
   });
 
-  // Sync profile data and study scores
+  // Get profile data with full progress maps
+  app.get("/api/profile/get", (req, res) => {
+    try {
+      const email = req.query.email as string;
+      if (!email) {
+        return res.status(400).json({ error: "Missing required email parameter." });
+      }
+
+      const list = getProfilesSafe();
+      const matched = list.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
+      if (matched) {
+        return res.json({ found: true, profile: matched });
+      } else {
+        return res.json({ found: false });
+      }
+    } catch (err) {
+      console.error("Profile load error:", err);
+      return res.status(500).json({ error: "Failed to fetch profile details" });
+    }
+  });
+
+  // Sync profile data and study scores with detailed progress maps
   app.post("/api/profile/sync", (req, res) => {
     try {
-      const { email, username, avatar, kanjiProgress = 0, verbsProgress = 0, adjectivesProgress = 0, grammarProgress = 0 } = req.body;
+      const {
+        email,
+        username,
+        avatar,
+        kanjiProgress = 0,
+        verbsProgress = 0,
+        adjectivesProgress = 0,
+        grammarProgress = 0,
+        kanjiProgressMap = {},
+        verbsProgressMap = {},
+        adjectivesProgressMap = {},
+        grammarProgressMap = {}
+      } = req.body;
+
       if (!email || !username) {
         return res.status(400).json({ error: "Missing required profile credentials (email, username)." });
       }
@@ -178,6 +212,8 @@ Ensure your output is a strictly formatted JSON array containing all processed e
       const totalProgress = Number(kanjiProgress) + Number(verbsProgress) + Number(adjectivesProgress) + Number(grammarProgress);
       const now = new Date().toISOString();
 
+      const existingData = matchedIdx >= 0 ? list[matchedIdx] : {};
+
       const profileObj = {
         email: email.toLowerCase(),
         username: username,
@@ -186,6 +222,10 @@ Ensure your output is a strictly formatted JSON array containing all processed e
         verbsProgress: Number(verbsProgress),
         adjectivesProgress: Number(adjectivesProgress),
         grammarProgress: Number(grammarProgress),
+        kanjiProgressMap: Object.keys(kanjiProgressMap).length > 0 ? kanjiProgressMap : (existingData.kanjiProgressMap || {}),
+        verbsProgressMap: Object.keys(verbsProgressMap).length > 0 ? verbsProgressMap : (existingData.verbsProgressMap || {}),
+        adjectivesProgressMap: Object.keys(adjectivesProgressMap).length > 0 ? adjectivesProgressMap : (existingData.adjectivesProgressMap || {}),
+        grammarProgressMap: Object.keys(grammarProgressMap).length > 0 ? grammarProgressMap : (existingData.grammarProgressMap || {}),
         totalProgress: totalProgress,
         updatedAt: now,
         joinedAt: matchedIdx >= 0 ? list[matchedIdx].joinedAt : now

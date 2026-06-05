@@ -574,7 +574,39 @@ export default function App() {
     }
   };
 
-  // Sync profile progress counts with server database
+  const loadProfileAndProgressFromServer = async (email: string) => {
+    try {
+      const res = await fetch(`/api/profile/get?email=${encodeURIComponent(email)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.found && data.profile) {
+          const prof = data.profile;
+          if (prof.kanjiProgressMap) {
+            setProgress(prof.kanjiProgressMap);
+            localStorage.setItem("jft_kanji_progress", JSON.stringify(prof.kanjiProgressMap));
+          }
+          if (prof.verbsProgressMap) {
+            setVerbsProgress(prof.verbsProgressMap);
+            localStorage.setItem("jft_verbs_progress", JSON.stringify(prof.verbsProgressMap));
+          }
+          if (prof.adjectivesProgressMap) {
+            setAdjectivesProgress(prof.adjectivesProgressMap);
+            localStorage.setItem("jft_adjectives_progress", JSON.stringify(prof.adjectivesProgressMap));
+          }
+          if (prof.grammarProgressMap) {
+            setGrammarProgress(prof.grammarProgressMap);
+            localStorage.setItem("jft_grammar_progress", JSON.stringify(prof.grammarProgressMap));
+          }
+          return prof;
+        }
+      }
+    } catch (e) {
+      console.error("Failed to fetch profile saved progress:", e);
+    }
+    return null;
+  };
+
+  // Sync profile progress counts and full maps with server database
   const syncProfileWithServer = async (
     profile = userProfile,
     kanjis = progress,
@@ -600,6 +632,10 @@ export default function App() {
           verbsProgress: vCount,
           adjectivesProgress: aCount,
           grammarProgress: gCount,
+          kanjiProgressMap: kanjis,
+          verbsProgressMap: vProgress,
+          adjectivesProgressMap: aProgress,
+          grammarProgressMap: gProgress,
         }),
       });
       // Fetch latest leaderboard
@@ -655,6 +691,9 @@ export default function App() {
     };
 
     fetchLeaderboard();
+    if (userProfile && userProfile.email) {
+      loadProfileAndProgressFromServer(userProfile.email);
+    }
 
     return () => {
       try {
@@ -1148,24 +1187,34 @@ export default function App() {
             </div>
           </div>
 
-          {/* Google Sign-in mount button */}
           <div className="space-y-4 pt-4 border-t border-[#f0ede6]">
+            {/* Google Sign-in One-Tap */}
             <div className="flex flex-col items-center space-y-2">
               <span className="text-[9px] font-black text-[#52796f] uppercase tracking-wider">
-                🔐 Login with Google Account
+                🔐 Login with Google One-Tap
               </span>
               <div id="google-login-gate-btn-container" className="flex justify-center min-h-[46px] w-full max-w-[280px]"></div>
             </div>
 
-            <div className="relative flex py-2 items-center">
+            {/* Explanatory Banner about 401 Authorization error */}
+            <div className="bg-[#bc6c25]/5 border border-[#bc6c25]/20 rounded-2xl p-4 text-left space-y-1.5">
+              <p className="text-[11px] leading-relaxed text-[#bc6c25] font-black">
+                ⚠️ Google Sign-In 401 direct error එකක් එනවා ද?
+              </p>
+              <p className="text-[10px] leading-relaxed text-[#52796f] font-medium">
+                (Is Google Sign-In showing a 401 error?) AI Studio Preview එක තුළ Google OAuth setups නැති නිසා එසේ විය හැක. <strong>එය මඟ හැරීමට පහත Form එකේ ඔබගේ Google නම සහ Gmail ලිපනය ඇතුලත් කර ඇතුල් වන්න!</strong> එවිට ඔබගේ දත්ත එම Google ලිපිනයටම සාර්ථකව සුරැකේ.
+              </p>
+            </div>
+
+            <div className="relative flex py-1 items-center">
               <div className="flex-grow border-t border-slate-200/80"></div>
-              <span className="flex-shrink mx-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">or create manual account</span>
+              <span className="flex-shrink mx-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">or sign in directly</span>
               <div className="flex-grow border-t border-slate-200/80"></div>
             </div>
 
-            {/* Manual Quick Create form */}
+            {/* Manual / Direct Google Account Login form */}
             <form
-              onSubmit={(e) => {
+              onSubmit={async (e) => {
                 e.preventDefault();
                 const formData = new FormData(e.currentTarget);
                 const username = formData.get("username") as string;
@@ -1177,12 +1226,16 @@ export default function App() {
                   return;
                 }
 
+                // Check and pull existing server side progress maps
+                const serverProf = await loadProfileAndProgressFromServer(email.trim().toLowerCase());
+
                 const manualProfile = {
-                  username,
-                  email,
-                  avatar,
-                  joinedAt: new Date().toISOString(),
+                  username: serverProf ? serverProf.username : username,
+                  email: email.trim().toLowerCase(),
+                  avatar: serverProf ? serverProf.avatar : avatar,
+                  joinedAt: serverProf ? serverProf.joinedAt : new Date().toISOString(),
                 };
+
                 setUserProfile(manualProfile);
                 syncProfileWithServer(manualProfile);
               }}
@@ -1190,7 +1243,7 @@ export default function App() {
             >
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider">
-                  Your Full Name (ඔබගේ නම)
+                  Your Name (ඔබගේ Google නම හෝ නම)
                 </label>
                 <input
                   type="text"
@@ -1203,7 +1256,7 @@ export default function App() {
 
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider">
-                  Email Address (ඊමේල් ලිපිනය)
+                  Google Gmail Address (ඔබගේ ජීමේල් ලිපිනය)
                 </label>
                 <input
                   type="email"
@@ -1243,7 +1296,7 @@ export default function App() {
                 type="submit"
                 className="w-full py-3 bg-[#52796f] hover:bg-[#354f52] text-white rounded-xl text-xs font-black tracking-wide transition shadow-md cursor-pointer text-center"
               >
-                📥 Start Learning Now (ඇතුල් වන්න)
+                📥 Secure Account Login (ඇතුල් වන්න)
               </button>
             </form>
           </div>
