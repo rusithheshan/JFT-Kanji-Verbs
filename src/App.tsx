@@ -659,93 +659,17 @@ export default function App() {
     }
   }, [userProfile]);
 
-  // Handle Google OAuth and custom login initialization
+  const [activeAuthTab, setActiveAuthTab] = useState<"login" | "register">("login");
+  const [regSuccessMessage, setRegSuccessMessage] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  // Handle backend initialization
   useEffect(() => {
-    // Inject official Google One-Tap/Sign-In script client side
-    const script = document.createElement("script");
-    script.src = "https://accounts.google.com/gsi/client";
-    script.async = true;
-    script.defer = true;
-    document.body.appendChild(script);
-
-    script.onload = () => {
-      try {
-        const client_id = (import.meta as any).env.VITE_GOOGLE_CLIENT_ID || "1028301820-fakegoogleid.apps.googleusercontent.com";
-        (window as any).google?.accounts.id.initialize({
-          client_id: client_id,
-          callback: handleGoogleSignInCallback,
-        });
-
-        // Try rendering immediately if target is present
-        const container = document.getElementById("google-login-gate-btn-container");
-        if (container && (window as any).google?.accounts?.id) {
-          (window as any).google.accounts.id.renderButton(container, {
-            theme: "outline",
-            size: "large",
-            width: 280
-          });
-        }
-      } catch (e) {
-        console.warn("Could not auto-initialize Google accounts client:", e);
-      }
-    };
-
     fetchLeaderboard();
     if (userProfile && userProfile.email) {
       loadProfileAndProgressFromServer(userProfile.email);
     }
-
-    return () => {
-      try {
-        document.body.removeChild(script);
-      } catch (e) {}
-    };
   }, []);
-
-  // Extra button-rendering triggers for state changes when showing Login Gate
-  useEffect(() => {
-    if (!userProfile) {
-      const renderBtn = () => {
-        const container = document.getElementById("google-login-gate-btn-container");
-        if (container && (window as any).google?.accounts?.id) {
-          (window as any).google.accounts.id.renderButton(container, {
-            theme: "outline",
-            size: "large",
-            width: 280
-          });
-        }
-      };
-      
-      // Attempt multiple times to handle race conditions with script load and DOM painting
-      renderBtn();
-      const t1 = setTimeout(renderBtn, 400);
-      const t2 = setTimeout(renderBtn, 1200);
-      const t3 = setTimeout(renderBtn, 2400);
-      return () => {
-        clearTimeout(t1);
-        clearTimeout(t2);
-        clearTimeout(t3);
-      };
-    }
-  }, [userProfile]);
-
-  const handleGoogleSignInCallback = (response: any) => {
-    try {
-      const payload = parseJwt(response.credential);
-      if (payload) {
-        const newProfile = {
-          username: payload.name || payload.given_name || "Google Learner",
-          email: payload.email,
-          avatar: payload.picture || "👤",
-          joinedAt: new Date().toISOString(),
-        };
-        setUserProfile(newProfile);
-        syncProfileWithServer(newProfile);
-      }
-    } catch (e) {
-      console.error("Google login token parsing failure:", e);
-    }
-  };
 
   // Sync progress shifts with leaderboard server after slight delays
   useEffect(() => {
@@ -1187,63 +1111,156 @@ export default function App() {
             </div>
           </div>
 
-          <div className="space-y-4 pt-4 border-t border-[#f0ede6]">
-            {/* Google Sign-in One-Tap */}
-            <div className="flex flex-col items-center space-y-2">
-              <span className="text-[9px] font-black text-[#52796f] uppercase tracking-wider">
-                🔐 Login with Google One-Tap
-              </span>
-              <div id="google-login-gate-btn-container" className="flex justify-center min-h-[46px] w-full max-w-[280px]"></div>
-            </div>
+          {/* Tab switches */}
+          <div className="grid grid-cols-2 p-1 bg-[#fdfbf7] rounded-2xl border border-[#e9e2d7]">
+            <button
+              onClick={() => {
+                setActiveAuthTab("login");
+                setAuthError(null);
+                setRegSuccessMessage(null);
+              }}
+              className={`py-2 text-center text-xs font-black rounded-xl transition duration-150 cursor-pointer ${
+                activeAuthTab === "login"
+                  ? "bg-[#52796f] text-white shadow-3xs"
+                  : "text-[#84a98c] hover:text-[#52796f]"
+              }`}
+            >
+              🔑 ඇතුල් වන්න (Login)
+            </button>
+            <button
+              onClick={() => {
+                setActiveAuthTab("register");
+                setAuthError(null);
+                setRegSuccessMessage(null);
+              }}
+              className={`py-2 text-center text-xs font-black rounded-xl transition duration-150 cursor-pointer ${
+                activeAuthTab === "register"
+                  ? "bg-[#52796f] text-white shadow-3xs"
+                  : "text-[#84a98c] hover:text-[#52796f]"
+              }`}
+            >
+              📝 ලියාපදිංචි වන්න (Register)
+            </button>
+          </div>
 
-            {/* Explanatory Banner about 401 Authorization error */}
-            <div className="bg-[#bc6c25]/5 border border-[#bc6c25]/20 rounded-2xl p-4 text-left space-y-1.5">
-              <p className="text-[11px] leading-relaxed text-[#bc6c25] font-black">
-                ⚠️ Google Sign-In 401 direct error එකක් එනවා ද?
-              </p>
-              <p className="text-[10px] leading-relaxed text-[#52796f] font-medium">
-                (Is Google Sign-In showing a 401 error?) AI Studio Preview එක තුළ Google OAuth setups නැති නිසා එසේ විය හැක. <strong>එය මඟ හැරීමට පහත Form එකේ ඔබගේ Google නම සහ Gmail ලිපනය ඇතුලත් කර ඇතුල් වන්න!</strong> එවිට ඔබගේ දත්ත එම Google ලිපිනයටම සාර්ථකව සුරැකේ.
-              </p>
-            </div>
+          {/* Highlighted Warning note about forgotten passwords */}
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 text-left">
+            <span className="text-[10px] font-extrabold text-amber-700 flex items-center gap-1.5 uppercase tracking-wider">
+              💡 වැදගත් උපදෙස් (Important Note)
+            </span>
+            <p className="text-[10.5px] leading-relaxed text-amber-950 mt-1 font-semibold">
+              මුරපදය අමතක නම් කරුණාකර නව ගිණුමක් සාදන්න. (If password is forgotten, please create a new account).
+            </p>
+          </div>
 
-            <div className="relative flex py-1 items-center">
-              <div className="flex-grow border-t border-slate-200/80"></div>
-              <span className="flex-shrink mx-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">or sign in directly</span>
-              <div className="flex-grow border-t border-slate-200/80"></div>
-            </div>
-
-            {/* Manual / Direct Google Account Login form */}
+          {activeAuthTab === "login" ? (
+            /* Login Option Block */
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
+                setAuthError(null);
                 const formData = new FormData(e.currentTarget);
-                const username = formData.get("username") as string;
-                const email = formData.get("email") as string;
-                const avatar = formData.get("avatar") as string;
+                const email = (formData.get("email") as string).trim().toLowerCase();
+                const password = formData.get("password") as string;
 
-                if (!username.trim() || !email.trim()) {
-                  alert("කරුණාකර සියලුම තොරතුරු නිවැරදිව පුරවන්න.");
+                if (!email || !password) {
+                  setAuthError("කරුණාකර සියලුම විස්තර පුරවන්න.");
                   return;
                 }
 
-                // Check and pull existing server side progress maps
-                const serverProf = await loadProfileAndProgressFromServer(email.trim().toLowerCase());
-
-                const manualProfile = {
-                  username: serverProf ? serverProf.username : username,
-                  email: email.trim().toLowerCase(),
-                  avatar: serverProf ? serverProf.avatar : avatar,
-                  joinedAt: serverProf ? serverProf.joinedAt : new Date().toISOString(),
-                };
-
-                setUserProfile(manualProfile);
-                syncProfileWithServer(manualProfile);
+                try {
+                  const res = await fetch("/api/auth/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email, password }),
+                  });
+                  const data = await res.json();
+                  if (res.ok && data.success) {
+                    setUserProfile(data.profile);
+                    await loadProfileAndProgressFromServer(email);
+                  } else {
+                    setAuthError(data.error || "ඇතුල් වීම අසාර්ථක විය. (Authentication failed).");
+                  }
+                } catch (err) {
+                  setAuthError("Server sync issues. Please try again.");
+                }
               }}
-              className="space-y-4"
+              className="space-y-3.5 pt-1"
             >
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider">
-                  Your Name (ඔබගේ Google නම හෝ නම)
+                  Email Address (ඊමේල් ලිපිනය)
+                </label>
+                <input
+                  type="email"
+                  name="email"
+                  required
+                  placeholder="e.g. ruwan@gmail.com"
+                  className="w-full text-xs rounded-xl border border-[#e9e2d7] px-3.5 py-2.5 bg-[#fdfbf7] focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#52796f]/15 focus:border-[#52796f]"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider">
+                  Password (මුරපදය)
+                </label>
+                <input
+                  type="password"
+                  name="password"
+                  required
+                  placeholder="••••••••"
+                  className="w-full text-xs rounded-xl border border-[#e9e2d7] px-3.5 py-2.5 bg-[#fdfbf7] focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#52796f]/15 focus:border-[#52796f]"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3 bg-[#52796f] hover:bg-[#354f52] text-white rounded-xl text-xs font-black tracking-wide transition shadow-md cursor-pointer text-center"
+              >
+                📥 ආරක්ෂිතව ඇතුළු වන්න (Secure Login)
+              </button>
+            </form>
+          ) : (
+            /* Register / Create Option Block */
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setAuthError(null);
+                setRegSuccessMessage(null);
+                const formData = new FormData(e.currentTarget);
+                const username = (formData.get("username") as string).trim();
+                const email = (formData.get("email") as string).trim().toLowerCase();
+                const password = formData.get("password") as string;
+                const targetExam = formData.get("targetExam") as string;
+                const avatar = formData.get("avatar") as string;
+
+                if (!username || !email || !password) {
+                  setAuthError("කරුණාකර සියලුම තොරතුරු නිවැරදිව පුරවන්න.");
+                  return;
+                }
+
+                try {
+                  const res = await fetch("/api/auth/register", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email, password, username, targetExam, avatar }),
+                  });
+                  const data = await res.json();
+                  if (res.ok && data.success) {
+                    setRegSuccessMessage("🎉 ගිණුම සාර්ථකව සාදන ලදී! කරුණාකර 'ඇතුල් වන්න' ටැබ් එකෙන් ඇතුල් වන්න.");
+                    setActiveAuthTab("login");
+                  } else {
+                    setAuthError(data.error || "ලියාපදිංචි වීම අසාර්ථක විය.");
+                  }
+                } catch (err) {
+                  setAuthError("Registration failed on server side.");
+                }
+              }}
+              className="space-y-3.5 pt-1"
+            >
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider">
+                  Your Full Name (ඔබගේ නම)
                 </label>
                 <input
                   type="text"
@@ -1256,7 +1273,7 @@ export default function App() {
 
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider">
-                  Google Gmail Address (ඔබගේ ජීමේල් ලිපිනය)
+                  Email Address (ඊමේල් ලිපිනය)
                 </label>
                 <input
                   type="email"
@@ -1268,8 +1285,41 @@ export default function App() {
               </div>
 
               <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider">
+                  Create Password (මුරපදයක් සාදන්න)
+                </label>
+                <input
+                  type="password"
+                  name="password"
+                  required
+                  placeholder="e.g. pass123"
+                  className="w-full text-xs rounded-xl border border-[#e9e2d7] px-3.5 py-2.5 bg-[#fdfbf7] focus:bg-[#fdfbf7] focus:outline-hidden focus:ring-2 focus:ring-[#52796f]/15 focus:border-[#52796f]"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider">
+                  Target Exam (ඉලක්කගත විභාගය)
+                </label>
+                <select
+                  name="targetExam"
+                  defaultValue="JFT-Basic"
+                  className="w-full text-xs rounded-xl border border-[#e9e2d7] px-3.5 py-2.5 bg-[#fdfbf7] focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#52796f]/15 focus:border-[#52796f]"
+                >
+                  <option value="JLPT N5">JLPT N5</option>
+                  <option value="JLPT N4">JLPT N4</option>
+                  <option value="JLPT N3">JLPT N3</option>
+                  <option value="JLPT N2">JLPT N2</option>
+                  <option value="JLPT N1">JLPT N1</option>
+                  <option value="JFT-Basic">JFT-Basic</option>
+                  <option value="NAT-TEST">NAT-TEST</option>
+                  <option value="OTHER">OTHER (වෙනත්)</option>
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1">
                 <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider mb-1">
-                  Choose Avatar Icon (අවතාරයක්)
+                  Choose Avatar Icon (අවතාරයක් තෝරන්න)
                 </label>
                 <div className="grid grid-cols-5 gap-1.5 bg-[#fdfbf7] p-2 rounded-xl border border-[#e9e2d7] text-center">
                   {["🦊", "🐼", "🚀", "🎓", "🗻", "🍣", "🌸", "🎏", "💡", "🥋"].map((emoji) => (
@@ -1294,12 +1344,29 @@ export default function App() {
 
               <button
                 type="submit"
-                className="w-full py-3 bg-[#52796f] hover:bg-[#354f52] text-white rounded-xl text-xs font-black tracking-wide transition shadow-md cursor-pointer text-center"
+                className="w-full py-3 bg-[#bc6c25] hover:bg-[#a05417] text-white rounded-xl text-xs font-black tracking-wide transition shadow-md cursor-pointer text-center"
               >
-                📥 Secure Account Login (ඇතුල් වන්න)
+                📥 නව ගිණුම සාදන්න (Create Account)
               </button>
             </form>
-          </div>
+          )}
+
+          {/* Success message indicators */}
+          {regSuccessMessage && (
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl p-4 text-xs font-bold leading-relaxed text-center animate-pulse">
+              {regSuccessMessage}
+            </div>
+          )}
+
+          {/* Highlight Wrong Password / Error logs clearly at the bottom as requested */}
+          {authError && (
+            <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl p-4 text-xs font-extrabold leading-relaxed text-center space-y-1.5 shadow-3xs">
+              <p className="text-rose-900">❌ {authError}</p>
+              <div className="border-t border-rose-200/40 pt-1.5 mt-1.5 text-[10px] text-[#bc6c25] font-extrabold text-[#bc6c25] text-left leading-relaxed">
+                ⚠️ මුරපදය වැරදුනි ද? ඔබගේ මුරපදය අමතක නම් කරුණාකර නැවත නව ගිණුමක් සාදා දත්ත සුරක්ෂිතව තබාගන්න. (If you forgot your password, please register a new account to keep learning).
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Global Footer info inside login gate too */}
@@ -3255,10 +3322,15 @@ export default function App() {
                             )}
 
                             <div>
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex items-center gap-1.5 flex-wrap">
                                 <span className="font-sans font-black text-xs text-[#354f52]">
                                   {player.username}
                                 </span>
+                                {player.targetExam && (
+                                  <span className="text-[8px] font-black bg-[#52796f]/10 text-[#52796f] border border-[#52796f]/25 rounded-md px-1.5 py-0.5">
+                                    {player.targetExam}
+                                  </span>
+                                )}
                                 {isMe && (
                                   <span className="text-[8px] font-black bg-[#bc6c25]/15 text-[#bc6c25] border border-[#bc6c25]/30 rounded-md px-1.5 py-0.5">
                                     You (ඔබ)

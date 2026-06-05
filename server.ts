@@ -157,7 +157,9 @@ Ensure your output is a strictly formatted JSON array containing all processed e
   app.get("/api/leaderboard", (req, res) => {
     try {
       const list = getProfilesSafe();
-      const sorted = [...list].sort((a, b) => b.totalProgress - a.totalProgress);
+      // Remove passwords before sharing public leaderboard
+      const scrubbed = list.map(({ password, ...rest }) => rest);
+      const sorted = [...scrubbed].sort((a, b) => b.totalProgress - a.totalProgress);
       return res.json({ leaderboard: sorted });
     } catch (err) {
       return res.status(500).json({ error: "Failed to load leaderboard" });
@@ -175,13 +177,85 @@ Ensure your output is a strictly formatted JSON array containing all processed e
       const list = getProfilesSafe();
       const matched = list.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
       if (matched) {
-        return res.json({ found: true, profile: matched });
+        const scrubbed = { ...matched };
+        delete (scrubbed as any).password;
+        return res.json({ found: true, profile: scrubbed });
       } else {
         return res.json({ found: false });
       }
     } catch (err) {
       console.error("Profile load error:", err);
       return res.status(500).json({ error: "Failed to fetch profile details" });
+    }
+  });
+
+  // Register active new user with email and password
+  app.post("/api/auth/register", (req, res) => {
+    try {
+      const { email, password, username, avatar = "🦊", targetExam = "OTHER" } = req.body;
+      if (!email || !password || !username) {
+        return res.status(400).json({ error: "කරුණාකර සියලුම තොරතුරු නිවැරදිව පුරවන්න. (Please provide email, password, and username)." });
+      }
+
+      const list = getProfilesSafe();
+      const existing = list.find((u: any) => u.email.toLowerCase() === email.trim().toLowerCase());
+      if (existing) {
+        return res.status(400).json({ error: "මෙම ඊමේල් ලිපිනයෙන් දැනටමත් ගිණුමක් සදා ඇත. (This email is already registered!)" });
+      }
+
+      const now = new Date().toISOString();
+      const newProfile = {
+        email: email.trim().toLowerCase(),
+        password: password,
+        username: username,
+        avatar: avatar,
+        targetExam: targetExam,
+        kanjiProgress: 0,
+        verbsProgress: 0,
+        adjectivesProgress: 0,
+        grammarProgress: 0,
+        kanjiProgressMap: {},
+        verbsProgressMap: {},
+        adjectivesProgressMap: {},
+        grammarProgressMap: {},
+        totalProgress: 0,
+        updatedAt: now,
+        joinedAt: now
+      };
+
+      list.push(newProfile);
+      saveProfilesSafe(list);
+
+      const savedProfile = { ...newProfile };
+      delete (savedProfile as any).password;
+      return res.json({ success: true, profile: savedProfile });
+    } catch (err) {
+      console.error("Registration error:", err);
+      return res.status(500).json({ error: "ලියාපදිංචි වීමට නොහැකි විය. Server registration failed." });
+    }
+  });
+
+  // Login existing user
+  app.post("/api/auth/login", (req, res) => {
+    try {
+      const { email, password } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ error: "කරුණාකර ඊමේල් සහ මුරපදය ඇතුළත් කරන්න. (Please provide email and password)." });
+      }
+
+      const list = getProfilesSafe();
+      const matched = list.find((u: any) => u.email.toLowerCase() === email.trim().toLowerCase());
+      
+      if (!matched || matched.password !== password) {
+        return res.status(401).json({ error: "ඊමේල් ලිපිනය හෝ මුරපදය වැරදිය! (Incorrect email or password)." });
+      }
+
+      const loggedProfile = { ...matched };
+      delete (loggedProfile as any).password;
+      return res.json({ success: true, profile: loggedProfile });
+    } catch (err) {
+      console.error("Login error:", err);
+      return res.status(500).json({ error: "ඇතුල් වීමට නොහැකි විය. Server login failed." });
     }
   });
 
@@ -217,6 +291,8 @@ Ensure your output is a strictly formatted JSON array containing all processed e
       const profileObj = {
         email: email.toLowerCase(),
         username: username,
+        password: existingData.password || req.body.password || "",
+        targetExam: req.body.targetExam || existingData.targetExam || "OTHER",
         avatar: avatar || "👤",
         kanjiProgress: Number(kanjiProgress),
         verbsProgress: Number(verbsProgress),
