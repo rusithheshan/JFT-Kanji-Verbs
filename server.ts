@@ -235,6 +235,66 @@ Ensure your output is a strictly formatted JSON array containing all processed e
     }
   });
 
+  // Simple, password-less entry: Get or Create Profile using Name & Exam
+  app.post("/api/auth/enter", (req, res) => {
+    try {
+      const { username, targetExam = "OTHER", avatar = "🦊" } = req.body;
+      if (!username || !username.trim()) {
+        return res.status(400).json({ error: "කරුණාකර ඔබගේ නම ඇතුළත් කරන්න. (Please provide a name)." });
+      }
+
+      const cleanName = username.trim();
+      const email = cleanName.toLowerCase() + "@no-email.com";
+      const list = getProfilesSafe();
+      let matchedIdx = list.findIndex((u: any) => u.email.toLowerCase() === email.toLowerCase());
+
+      const now = new Date().toISOString();
+
+      if (matchedIdx >= 0) {
+        // Automatically log in to existing account. Update exam if changed
+        const matched = list[matchedIdx];
+        matched.targetExam = targetExam || matched.targetExam || "OTHER";
+        matched.username = cleanName; // preserve original casing
+        matched.updatedAt = now;
+        saveProfilesSafe(list);
+
+        const loggedProfile = { ...matched };
+        delete (loggedProfile as any).password;
+        return res.json({ success: true, profile: loggedProfile });
+      } else {
+        // Register a new profile under this name
+        const newProfile = {
+          email: email,
+          password: "",
+          username: cleanName,
+          avatar: avatar,
+          targetExam: targetExam,
+          kanjiProgress: 0,
+          verbsProgress: 0,
+          adjectivesProgress: 0,
+          grammarProgress: 0,
+          kanjiProgressMap: {},
+          verbsProgressMap: {},
+          adjectivesProgressMap: {},
+          grammarProgressMap: {},
+          totalProgress: 0,
+          updatedAt: now,
+          joinedAt: now
+        };
+
+        list.push(newProfile);
+        saveProfilesSafe(list);
+
+        const savedProfile = { ...newProfile };
+        delete (savedProfile as any).password;
+        return res.json({ success: true, profile: savedProfile });
+      }
+    } catch (err) {
+      console.error("Auth enter error:", err);
+      return res.status(500).json({ error: "ගිණුමට ඇතුල් වීමට නොහැකි විය. Server entry failure." });
+    }
+  });
+
   // Login existing user
   app.post("/api/auth/login", (req, res) => {
     try {
