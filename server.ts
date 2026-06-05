@@ -153,16 +153,94 @@ Ensure your output is a strictly formatted JSON array containing all processed e
     }
   }
 
-  // Get active shared leaderboard
+  // Safe helper to hash email to hide it from DevTools/public payload while keeping comparisons working
+  function hashEmailSafe(email: string): string {
+    if (!email) return "anonymous";
+    let hash = 0;
+    const lower = email.trim().toLowerCase();
+    for (let i = 0; i < lower.length; i++) {
+      hash = (hash << 5) - hash + lower.charCodeAt(i);
+      hash |= 0;
+    }
+    return "u_" + Math.abs(hash);
+  }
+
+  // Get active shared leaderboard (scrubbed of emails/phone numbers for critical privacy)
   app.get("/api/leaderboard", (req, res) => {
     try {
       const list = getProfilesSafe();
-      // Remove passwords before sharing public leaderboard
-      const scrubbed = list.map(({ password, ...rest }) => rest);
-      const sorted = [...scrubbed].sort((a, b) => b.totalProgress - a.totalProgress);
+      
+      const scrubbed = list.map((user) => {
+        return {
+          id: hashEmailSafe(user.email || ''),
+          username: user.username || 'Learner',
+          avatar: user.avatar || '🦊',
+          targetExam: user.targetExam || 'JFT-Basic',
+          kanjiProgress: Number(user.kanjiProgress || 0),
+          verbsProgress: Number(user.verbsProgress || 0),
+          adjectivesProgress: Number(user.adjectivesProgress || 0),
+          grammarProgress: Number(user.grammarProgress || 0),
+          totalProgress: Number(user.totalProgress || 0),
+          joinedAt: user.joinedAt || user.updatedAt || ''
+        };
+      });
+
+      const sorted = scrubbed.sort((a, b) => b.totalProgress - a.totalProgress);
       return res.json({ leaderboard: sorted });
     } catch (err) {
+      console.error("Leaderboard loading error:", err);
       return res.status(500).json({ error: "Failed to load leaderboard" });
+    }
+  });
+
+  // Stream registrants list as an Excel-compatible CSV file (Only for Admin)
+  app.get("/api/admin/export-registrants", (req, res) => {
+    try {
+      const { code } = req.query;
+      if (code !== "admin123") {
+        return res.status(403).json({ error: "අනවසර පිවිසුමකි. (Unauthorized code)." });
+      }
+
+      const list = getProfilesSafe();
+
+      // Set content type and attachment headers
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", "attachment; filename=JFT_Palace_Students_Report.csv");
+
+      // Write UTF-8 BOM so Excel opens Sinhalese Unicode correctly on local Windows systems
+      res.write("\uFEFF");
+
+      // Headers
+      res.write("Name (නම),Email (ඊමේල්),Phone Number (දුරකථනය),Target Exam (ඉලක්කගත විභාගය),Joined Date (ලියාපදිංචි දිනය),Total Score (මුළු ලකුණු),Kanji (කංජි),Verbs (ක්‍රියාපද),Adjectives (විශේෂණ),Grammar (ව්‍යාකරණ)\n");
+
+      const escapeCsv = (val: any) => {
+        if (val === null || val === undefined) return '';
+        const s = String(val);
+        if (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r")) {
+          return '"' + s.replace(/"/g, '""') + '"';
+        }
+        return s;
+      };
+
+      for (const u of list) {
+        res.write([
+          escapeCsv(u.username),
+          escapeCsv(u.email),
+          escapeCsv(u.phoneNumber || 'N/A'),
+          escapeCsv(u.targetExam || 'N/A'),
+          escapeCsv(u.joinedAt || u.updatedAt || ''),
+          escapeCsv(u.totalProgress || 0),
+          escapeCsv(u.kanjiProgress || 0),
+          escapeCsv(u.verbsProgress || 0),
+          escapeCsv(u.adjectivesProgress || 0),
+          escapeCsv(u.grammarProgress || 0)
+        ].join(",") + "\n");
+      }
+
+      res.end();
+    } catch (err) {
+      console.error("Export registrants CSV error:", err);
+      res.status(500).json({ error: "Excel අපනයනය අසාර්ථක විය. (Export failed)." });
     }
   });
 
@@ -189,25 +267,35 @@ Ensure your output is a strictly formatted JSON array containing all processed e
     }
   });
 
-  // Register active new user with email and password
+  // Register active new user with email, phone number, and password
   app.post("/api/auth/register", (req, res) => {
     try {
-      const { email, password, username, avatar = "🦊", targetExam = "OTHER" } = req.body;
-      if (!email || !password || !username) {
-        return res.status(400).json({ error: "කරුණාකර සියලුම තොරතුරු නිවැරදිව පුරවන්න. (Please provide email, password, and username)." });
+      const { email, phoneNumber, password, username, avatar = "🦊", targetExam = "JFT-Basic" } = req.body;
+      if (!email || !phoneNumber || !password || !username) {
+        return res.status(400).json({ error: "කරුණාකර සියලුම තොරතුරු (නම, ඊමේල්, දුරකථන අංකය, මුරපදය) ඇතුළත් කරන්න. (Please provide Name, Email, Phone Number, and Password)." });
       }
 
+      const cleanEmail = email.trim().toLowerCase();
+      const cleanPhone = phoneNumber.trim();
+
       const list = getProfilesSafe();
-      const existing = list.find((u: any) => u.email.toLowerCase() === email.trim().toLowerCase());
-      if (existing) {
-        return res.status(400).json({ error: "මෙම ඊමේල් ලිපිනයෙන් දැනටමත් ගිණුමක් සදා ඇත. (This email is already registered!)" });
+      
+      const emailExists = list.find((u: any) => u.email && u.email.toLowerCase() === cleanEmail);
+      if (emailExists) {
+        return res.status(400).json({ error: "මෙම ඊමේල් ලිපිනයෙන් දැනටමත් ගිණුමක් ලියාපදිංචි කර ඇත. (This email is already registered!)" });
+      }
+
+      const phoneExists = list.find((u: any) => u.phoneNumber && u.phoneNumber.trim() === cleanPhone);
+      if (phoneExists) {
+        return res.status(400).json({ error: "මෙම දුරකථන අංකයෙන් දැනටමත් ගිණුමක් ලියාපදිංචි කර ඇත. (This phone number is already registered!)" });
       }
 
       const now = new Date().toISOString();
       const newProfile = {
-        email: email.trim().toLowerCase(),
+        email: cleanEmail,
+        phoneNumber: cleanPhone,
         password: password,
-        username: username,
+        username: username.trim(),
         avatar: avatar,
         targetExam: targetExam,
         kanjiProgress: 0,
@@ -235,7 +323,7 @@ Ensure your output is a strictly formatted JSON array containing all processed e
     }
   });
 
-  // Simple, password-less entry: Get or Create Profile using Name & Exam
+  // Simple, password-less entry fallback: Get or Create Profile using Name & Exam
   app.post("/api/auth/enter", (req, res) => {
     try {
       const { username, targetExam = "OTHER", avatar = "🦊" } = req.body;
@@ -265,6 +353,7 @@ Ensure your output is a strictly formatted JSON array containing all processed e
         // Register a new profile under this name
         const newProfile = {
           email: email,
+          phoneNumber: "",
           password: "",
           username: cleanName,
           avatar: avatar,
@@ -295,96 +384,25 @@ Ensure your output is a strictly formatted JSON array containing all processed e
     }
   });
 
-  // Securely verify Google-provided User ID Tokens sent from the frontend client
-  app.post("/api/auth/google", async (req, res) => {
-    try {
-      const { idToken, targetExam = "JFT-Basic" } = req.body;
-      if (!idToken) {
-        return res.status(400).json({ error: "Google Identity token is required." });
-      }
-
-      // Securely call Google Token Verification Endpoint
-      const response = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
-      if (!response.ok) {
-        return res.status(400).json({ error: "Invalid Google ID token signature or expired." });
-      }
-
-      const payload = await response.json() as {
-        email?: string;
-        name?: string;
-        picture?: string;
-        sub?: string;
-        aud?: string;
-      };
-
-      if (!payload.email) {
-        return res.status(400).json({ error: "Google account does not expose a fallback email address." });
-      }
-
-      const googleEmail = payload.email.trim().toLowerCase();
-      const list = getProfilesSafe();
-      let matchedIdx = list.findIndex((u: any) => u.email.toLowerCase() === googleEmail);
-
-      const now = new Date().toISOString();
-
-      if (matchedIdx >= 0) {
-        // Log in to existing matched social profile
-        const matched = list[matchedIdx];
-        matched.username = payload.name || matched.username;
-        matched.avatar = payload.picture || matched.avatar || "👤";
-        matched.updatedAt = now;
-        saveProfilesSafe(list);
-
-        const loggedProfile = { ...matched };
-        delete (loggedProfile as any).password;
-        return res.json({ success: true, profile: loggedProfile });
-      } else {
-        // Register a new native user profile with verified Google metadata
-        const newProfile = {
-          email: googleEmail,
-          password: "", // Social profiles don't enforce default password verification
-          username: payload.name || "Google Learner",
-          avatar: payload.picture || "👤",
-          targetExam: targetExam || "JFT-Basic",
-          kanjiProgress: 0,
-          verbsProgress: 0,
-          adjectivesProgress: 0,
-          grammarProgress: 0,
-          kanjiProgressMap: {},
-          verbsProgressMap: {},
-          adjectivesProgressMap: {},
-          grammarProgressMap: {},
-          totalProgress: 0,
-          updatedAt: now,
-          joinedAt: now
-        };
-
-        list.push(newProfile);
-        saveProfilesSafe(list);
-
-        const savedProfile = { ...newProfile };
-        delete (savedProfile as any).password;
-        return res.json({ success: true, profile: savedProfile });
-      }
-    } catch (err) {
-      console.error("Backend Google token verification error:", err);
-      return res.status(500).json({ error: "Could not safely verify Google credentials on the server." });
-    }
-  });
-
-  // Login existing user
+  // Login existing user using Email OR Phone Number + Password
   app.post("/api/auth/login", (req, res) => {
     try {
-      const { email, password } = req.body;
-      if (!email || !password) {
-        return res.status(400).json({ error: "කරුණාකර ඊමේල් සහ මුරපදය ඇතුළත් කරන්න. (Please provide email and password)." });
+      const { loginIdentifier, password } = req.body;
+      if (!loginIdentifier || !password) {
+        return res.status(400).json({ error: "කරුණාකර ඊමේල් ලිපිනය/දුරකථන අංකය සහ මුරපදය ඇතුළත් කරන්න. (Please provide email/phone and password)." });
       }
 
+      const identifier = loginIdentifier.trim().toLowerCase();
       const list = getProfilesSafe();
-      const matched = list.find((u: any) => u.email.toLowerCase() === email.trim().toLowerCase());
+      
+      const matched = list.find((u: any) => {
+        const emMatch = u.email && u.email.toLowerCase() === identifier;
+        const phMatch = u.phoneNumber && u.phoneNumber.trim() === loginIdentifier.trim();
+        return emMatch || phMatch;
+      });
       
       if (!matched || matched.password !== password) {
-        return res.status(401).json({ error: "ඊමේල් ලිපිනය හෝ මුරපදය වැරදිය! (Incorrect email or password)." });
+        return res.status(401).json({ error: "ඇතුළත් කළ තොරතුරු හෝ මුරපදය වැරදියි! (Incorrect email/phone or password)." });
       }
 
       const loggedProfile = { ...matched };
@@ -427,6 +445,7 @@ Ensure your output is a strictly formatted JSON array containing all processed e
 
       const profileObj = {
         email: email.toLowerCase(),
+        phoneNumber: req.body.phoneNumber || existingData.phoneNumber || "",
         username: username,
         password: existingData.password || req.body.password || "",
         targetExam: req.body.targetExam || existingData.targetExam || "OTHER",

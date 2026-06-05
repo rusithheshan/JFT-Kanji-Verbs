@@ -663,91 +663,17 @@ export default function App() {
   const [regSuccessMessage, setRegSuccessMessage] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
 
-  // Google credential handoff handler
-  const handleGoogleCredentialResponse = async (response: any) => {
-    try {
-      setAuthError(null);
-      const res = await fetch("/api/auth/google", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idToken: response.credential, targetExam: "JFT-Basic" }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setUserProfile(data.profile);
-        await loadProfileAndProgressFromServer(data.profile.email);
-      } else {
-        throw new Error(data.error || "Server token verification failed");
-      }
-    } catch (err) {
-      console.warn("Backend Google verification failed, falling back to local client-side JWT decode:", err);
-      // Fallback decode local details so it is static/offline hosting safe e.g. Netlify
-      const decoded = parseJwt(response.credential);
-      if (decoded && decoded.email) {
-        const fallbackProfile = {
-          username: decoded.name || decoded.email.split("@")[0],
-          email: decoded.email,
-          avatar: decoded.picture || "👤",
-          targetExam: "JFT-Basic",
-          joinedAt: new Date().toISOString(),
-          kanjiProgress: 0,
-          verbsProgress: 0,
-          adjectivesProgress: 0,
-          grammarProgress: 0,
-          kanjiProgressMap: {},
-          verbsProgressMap: {},
-          adjectivesProgressMap: {},
-          grammarProgressMap: {},
-          totalProgress: 0,
-        };
-        setUserProfile(fallbackProfile);
-      } else {
-        setAuthError("Google credentials could not be parsed safely.");
-      }
+  // Safe helper to hash email to hide it from DevTools/public payload while keeping comparisons working
+  const hashEmailSafe = (email: string): string => {
+    if (!email) return "anonymous";
+    let hash = 0;
+    const lower = email.trim().toLowerCase();
+    for (let i = 0; i < lower.length; i++) {
+      hash = (hash << 5) - hash + lower.charCodeAt(i);
+      hash |= 0;
     }
+    return "u_" + Math.abs(hash);
   };
-
-  // Load official Google Identity Services client script and initialize
-  useEffect(() => {
-    const script = document.createElement("script");
-    script.src = "https://accounts.google.com/gsi/client";
-    script.async = true;
-    script.defer = true;
-    script.onload = () => {
-      try {
-        const clientID = (import.meta as any).env.VITE_GOOGLE_CLIENT_ID || "564478201201-fakeclientid10239018.apps.googleusercontent.com";
-        const g = (window as any).google;
-        if (g && g.accounts && g.accounts.id) {
-          g.accounts.id.initialize({
-            client_id: clientID,
-            callback: handleGoogleCredentialResponse,
-            auto_select: false,
-          });
-
-          // Draw the native google login buttons if target containers exist
-          const targetBtn = document.getElementById("google-signin-btn-target");
-          if (targetBtn) {
-            g.accounts.id.renderButton(targetBtn, {
-              theme: "outline",
-              size: "large",
-              width: 320,
-              text: "continue_with",
-              shape: "pill",
-            });
-          }
-        }
-      } catch (err) {
-        console.error("Google button initialization failure:", err);
-      }
-    };
-    document.body.appendChild(script);
-
-    return () => {
-      try {
-        document.body.removeChild(script);
-      } catch (e) {}
-    };
-  }, [userProfile]); // re-evaluate when user profile is null to draw button
 
   // Handle backend initialization
   useEffect(() => {
@@ -1174,6 +1100,88 @@ export default function App() {
   }, [grammarList, grammarProgress, activeGrammarFilter, grammarSearchQuery]);
 
   if (!userProfile) {
+    const handleRegisterSubmit = async (e: FormEvent<HTMLFormElement>) => {
+      e.preventDefault();
+      setAuthError(null);
+      setRegSuccessMessage(null);
+      
+      const formData = new FormData(e.currentTarget);
+      const username = (formData.get("username") as string || "").trim();
+      const email = (formData.get("email") as string || "").trim();
+      const phoneNumber = (formData.get("phoneNumber") as string || "").trim();
+      const password = (formData.get("password") as string || "").trim();
+      const targetExam = formData.get("targetExam") as string;
+      const avatar = formData.get("avatar") as string;
+
+      if (!username || !email || !phoneNumber || !password) {
+        setAuthError("කරුණාකර සියලුම විස්තර නිවැරදිව පිරවිය යුතුය. (All fields are required).");
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, phoneNumber, password, username, avatar, targetExam }),
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          setRegSuccessMessage("ලියාපදිංචිය සාර්ථකයි! දැන් ඔබගේ ඊමේල් ලිපිනය/දුරකථන අංකය සහ මුරපදය මගින් ඇතුල් වන්න.");
+          setActiveAuthTab("login");
+        } else {
+          setAuthError(data.error || "Server registration error");
+        }
+      } catch (err) {
+        console.error("Registration error:", err);
+        setAuthError("ලියාපදිංචි වීමට නොහැකි විය. කරුණාකර නැවත උත්සාහ කරන්න.");
+      }
+    };
+
+    const handleLoginSubmit = async (e: FormEvent<HTMLFormElement>) => {
+      e.preventDefault();
+      setAuthError(null);
+      setRegSuccessMessage(null);
+
+      const formData = new FormData(e.currentTarget);
+      const loginIdentifier = (formData.get("loginIdentifier") as string || "").trim();
+      const password = (formData.get("password") as string || "").trim();
+
+      if (!loginIdentifier || !password) {
+        setAuthError("කරුණාකර ඊමේල් හෝ දුරකථන අංකය සහ මුරපදය ඇතුළත් කරන්න.");
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ loginIdentifier, password }),
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          setUserProfile(data.profile);
+          await loadProfileAndProgressFromServer(data.profile.email);
+        } else {
+          setAuthError(data.error || "ඇතුළත් කළ තොරතුරු වැරදියි.");
+        }
+      } catch (err) {
+        console.error("Login connection failure:", err);
+        setAuthError("ඇතුල් වීමට නොහැකි විය. කරුණාකර නැවත උත්සාහ කරන්න.");
+      }
+    };
+
+    const handleAdminExport = () => {
+      const code = prompt("දත්ත අපනයනය සඳහා Admin Passcode එක ඇතුළත් කරන්න (Enter Admin Passcode):");
+      if (code === null) return;
+      if (code.trim() !== "admin123") {
+        alert("❌ ඇතුල් කළ මුරපදය වැරදියි! (Incorrect passcode)");
+        return;
+      }
+      window.open(`/api/admin/export-registrants?code=${encodeURIComponent(code)}`, "_blank");
+    };
+
     return (
       <div className="min-h-screen flex flex-col justify-center items-center bg-[#fdfbf7] p-4 text-[#352d28]" id="login-gate-container">
         <div className="w-full max-w-md bg-white border border-[#e9e2d7] rounded-[32px] p-8 shadow-md relative overflow-hidden space-y-6 animate-fade-in">
@@ -1188,165 +1196,214 @@ export default function App() {
               <h2 className="text-xl font-black font-display text-[#354f52]">
                 JFT & N4 Learning Palace
               </h2>
-              <span className="text-[10px] font-black text-white bg-[#bc6c25] px-2.5 py-0.5 rounded-full uppercase tracking-wider mt-1.5 inline-block">
-                නම සහ විභාගය තෝරන්න (Enter Name & Exam)
-              </span>
-              <p className="text-xs text-[#84a98c] mt-2.5 font-medium leading-relaxed max-w-xs mx-auto">
-                ඔබගේ දත්ත Leaderboard එකේ පෙන්වීමට සහ සුරක්ෂිතව තබාගැනීමට ඔබගේ නම සහ විභාගය ඇතුළත් කරන්න.
+              <p className="text-xs text-[#84a98c] mt-1.5 font-medium leading-relaxed max-w-xs mx-auto">
+                ඔබේ ප්‍රගතිය සහ ශ්‍රේණිගත කිරීම් සුරැකීමට ගිණුමකට පිවිසෙන්න.
               </p>
             </div>
           </div>
 
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault();
-              setAuthError(null);
-              const formData = new FormData(e.currentTarget);
-              const username = (formData.get("username") as string).trim();
-              const targetExam = formData.get("targetExam") as string;
-              const avatar = formData.get("avatar") as string;
-
-              if (!username) {
-                setAuthError("කරුණාකර ඔබගේ නම ඇතුළත් කරන්න.");
-                return;
-              }
-
-              try {
-                const res = await fetch("/api/auth/enter", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ username, targetExam, avatar }),
-                });
-                
-                let data;
-                try {
-                  data = await res.json();
-                } catch (e) {
-                  throw new Error("Offline or static hosting environment");
-                }
-
-                if (res.ok && data.success) {
-                  setUserProfile(data.profile);
-                  await loadProfileAndProgressFromServer(data.profile.email);
-                } else {
-                  throw new Error(data.error || "Server error");
-                }
-              } catch (err) {
-                // FALLBACK FOR OFFLINE / STATIC WEB HOSTING (e.g. Netlify)
-                console.warn("Backend server not available. Falling back to client-side localStorage profile session:", err);
-                const fallbackEmail = username.toLowerCase().replace(/[^a-z0-9]/g, "_") + "@no-email.com";
-                const fallbackProfile = {
-                  username,
-                  email: fallbackEmail,
-                  avatar: avatar || "🦊",
-                  targetExam: targetExam || "JFT-Basic",
-                  joinedAt: new Date().toISOString(),
-                };
-                setUserProfile(fallbackProfile);
-              }
-            }}
-            className="space-y-4 pt-1"
-          >
-            {/* Name Input Field */}
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider">
-                ඔබගේ සම්පූර්ණ නම (Your Name)
-              </label>
-              <input
-                type="text"
-                name="username"
-                required
-                placeholder="e.g. Ruwan Silva"
-                className="w-full text-xs rounded-xl border border-[#e9e2d7] px-3.5 py-2.5 bg-[#fdfbf7] focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#52796f]/15 focus:border-[#52796f] font-semibold text-slate-800"
-              />
-            </div>
-
-            {/* Exam Selection Dropdown */}
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider">
-                ඉලක්කගත විභාගය (Select Target Exam)
-              </label>
-              <select
-                name="targetExam"
-                defaultValue="JFT-Basic"
-                className="w-full text-xs rounded-xl border border-[#e9e2d7] px-3.5 py-2.5 bg-[#fdfbf7] focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#52796f]/15 focus:border-[#52796f] font-bold text-[#354f52] cursor-pointer"
-              >
-                <option value="JLPT N5">JLPT N5</option>
-                <option value="JLPT N4">JLPT N4</option>
-                <option value="JLPT N3">JLPT N3</option>
-                <option value="JLPT N2">JLPT N2</option>
-                <option value="JLPT N1">JLPT N1</option>
-                <option value="JFT-Basic">JFT-Basic</option>
-                <option value="NAT-TEST">NAT-TEST</option>
-                <option value="OTHER">OTHER (වෙනත්)</option>
-              </select>
-            </div>
-
-            {/* Avatar picker (Let them choose a cool profile avatar too!) */}
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider mb-1">
-                අවතාරයක් තෝරන්න (Choose Avatar Icon)
-              </label>
-              <div className="grid grid-cols-5 gap-1.5 bg-[#fdfbf7] p-2 rounded-xl border border-[#e9e2d7] text-center">
-                {["🦊", "🐼", "🚀", "🎓", "🗻", "🍣", "🌸", "🎏", "💡", "🥋"].map((emoji) => (
-                  <label
-                    key={emoji}
-                    className="flex items-center justify-center p-1.5 rounded-lg cursor-pointer hover:bg-white hover:scale-105 active:scale-95 transition-all text-base shadow-3xs"
-                  >
-                    <input
-                      type="radio"
-                      name="avatar"
-                      value={emoji}
-                      defaultChecked={emoji === "🦊"}
-                      className="sr-only peer"
-                    />
-                    <span className="peer-checked:bg-[#bc6c25]/15 peer-checked:ring-2 peer-checked:ring-[#bc6c25]/40 px-2 py-0.5 rounded-md transition duration-150">
-                      {emoji}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* Submit Button */}
+          {/* Tab Selection Switches */}
+          <div className="flex bg-[#fcfaf5] border border-[#e9dfcc] p-1 rounded-2xl">
             <button
-              type="submit"
-              className="w-full py-3 bg-[#52796f] hover:bg-[#354f52] text-white rounded-xl text-xs font-black tracking-wide transition shadow-md cursor-pointer text-center"
+              onClick={() => {
+                setActiveAuthTab("login");
+                setAuthError(null);
+              }}
+              className={`flex-1 py-2.5 text-xs font-black rounded-xl transition duration-150 ${
+                activeAuthTab === "login"
+                  ? "bg-[#52796f] text-white shadow-sm"
+                  : "text-slate-500 hover:text-[#52796f]"
+              }`}
             >
-              🚀 ඉගෙනුම ආරම්භ කරන්න (Start Learning)
+              🔑 ඇතුල් වීම (Login)
             </button>
-          </form>
-
-          {/* Secure Google Account Section */}
-          <div className="relative py-1">
-            <div className="absolute inset-0 flex items-center" aria-hidden="true">
-              <div className="w-full border-t border-[#e9e2d7]" />
-            </div>
-            <div className="relative flex justify-center text-xs">
-              <span className="bg-white px-3 font-semibold text-[#84a98c]">නැතහොත් (Or Secure Account)</span>
-            </div>
+            <button
+              onClick={() => {
+                setActiveAuthTab("register");
+                setAuthError(null);
+              }}
+              className={`flex-1 py-2.5 text-xs font-black rounded-xl transition duration-150 ${
+                activeAuthTab === "register"
+                  ? "bg-[#52796f] text-white shadow-sm"
+                  : "text-slate-500 hover:text-[#52796f]"
+              }`}
+            >
+              📝 ලියාපදිංචිය (Register)
+            </button>
           </div>
 
-          {/* Google Sign-In button container */}
-          <div className="flex flex-col items-center justify-center space-y-2.5">
-            <div id="google-signin-btn-target" className="overflow-hidden rounded-xl max-w-full flex justify-center"></div>
-            <p className="text-[9px] text-[#84a98c] font-semibold text-center leading-normal max-w-xs">
-              Google ගිණුම මගින් ආරක්‍ෂිතව ඇතුළු වී ඔබගේ ලකුණු සහ ප්‍රගතිය (Active SRS State) ස්වයංක්‍රීයව සුරක්ෂිත කරන්න.
-            </p>
-          </div>
+          {/* Success message banner */}
+          {regSuccessMessage && (
+            <div className="bg-[#cad2c5]/35 border border-[#cad2c5] text-[#354f52] rounded-2xl p-4 text-xs font-bold leading-relaxed text-center">
+              ✓ {regSuccessMessage}
+            </div>
+          )}
 
-          {/* Error messages if any */}
+          {/* Error message banner */}
           {authError && (
-            <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl p-4 text-xs font-extrabold leading-relaxed text-center shadow-3xs">
+            <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl p-4 text-xs font-bold leading-relaxed text-center">
               ❌ {authError}
             </div>
           )}
+
+          {activeAuthTab === "login" ? (
+            /* LOGIN FORM BLOCK */
+            <form onSubmit={handleLoginSubmit} className="space-y-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider">
+                  ඊමේල් හෝ දුරකථන අංකය (Email or Phone Number)
+                </label>
+                <input
+                  type="text"
+                  name="loginIdentifier"
+                  required
+                  placeholder="e.g. 0771234567 or student@email.com"
+                  className="w-full text-xs rounded-xl border border-[#e9e2d7] px-3.5 py-2.5 bg-[#fdfbf7] focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#52796f]/15 focus:border-[#52796f] font-semibold text-slate-800"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider">
+                  මුරපදය (Password)
+                </label>
+                <input
+                  type="password"
+                  name="password"
+                  required
+                  placeholder="••••••••"
+                  className="w-full text-xs rounded-xl border border-[#e9e2d7] px-3.5 py-2.5 bg-[#fdfbf7] focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#52796f]/15 focus:border-[#52796f] font-semibold text-slate-800"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3 bg-[#52796f] hover:bg-[#354f52] text-white rounded-xl text-xs font-black tracking-wide transition shadow-md cursor-pointer text-center"
+              >
+                🚀 ඇතුල් වන්න (Secure Login)
+              </button>
+            </form>
+          ) : (
+            /* REGISTER FORM BLOCK */
+            <form onSubmit={handleRegisterSubmit} className="space-y-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider">
+                  ඔබගේ සම්පූර්ණ නම (Your Name)
+                </label>
+                <input
+                  type="text"
+                  name="username"
+                  required
+                  placeholder="e.g. Ruwan Silva"
+                  className="w-full text-xs rounded-xl border border-[#e9e2d7] px-3.5 py-2.5 bg-[#fdfbf7] focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#52796f]/15 focus:border-[#52796f] font-semibold text-slate-800"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider">
+                  ඊමේල් ලිපිනය (Email Address)
+                </label>
+                <input
+                  type="email"
+                  name="email"
+                  required
+                  placeholder="e.g. ruwan@gmail.com"
+                  className="w-full text-xs rounded-xl border border-[#e9e2d7] px-3.5 py-2.5 bg-[#fdfbf7] focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#52796f]/15 focus:border-[#52796f] font-semibold text-slate-800"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider">
+                  දුරකථන අංකය (Phone Number)
+                </label>
+                <input
+                  type="tel"
+                  name="phoneNumber"
+                  required
+                  placeholder="e.g. 0771234567"
+                  className="w-full text-xs rounded-xl border border-[#e9e2d7] px-3.5 py-2.5 bg-[#fdfbf7] focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#52796f]/15 focus:border-[#52796f] font-semibold text-slate-800"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider">
+                  ඉලක්කගත විභාගය (Select Target Exam)
+                </label>
+                <select
+                  name="targetExam"
+                  defaultValue="JFT-Basic"
+                  className="w-full text-xs rounded-xl border border-[#e9e2d7] px-3.5 py-2.5 bg-[#fdfbf7] focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#52796f]/15 focus:border-[#52796f] font-bold text-[#354f52] cursor-pointer"
+                >
+                  <option value="JLPT N5">JLPT N5</option>
+                  <option value="JLPT N4">JLPT N4</option>
+                  <option value="JLPT N3">JLPT N3</option>
+                  <option value="JLPT N2">JLPT N2</option>
+                  <option value="JLPT N1">JLPT N1</option>
+                  <option value="JFT-Basic">JFT-Basic</option>
+                  <option value="NAT-TEST">NAT-TEST</option>
+                  <option value="OTHER">OTHER (වෙනත්)</option>
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider mb-1">
+                  අවතාරයක් තෝරන්න (Choose Avatar Icon)
+                </label>
+                <div className="grid grid-cols-5 gap-1.5 bg-[#fdfbf7] p-2 rounded-xl border border-[#e9e2d7] text-center">
+                  {["🦊", "🐼", "🚀", "🎓", "🗻", "🍣", "🌸", "🎏", "💡", "🥋"].map((emoji) => (
+                    <label
+                      key={emoji}
+                      className="flex items-center justify-center p-1.5 rounded-lg cursor-pointer hover:bg-white hover:scale-105 active:scale-95 transition-all text-base shadow-3xs"
+                    >
+                      <input
+                        type="radio"
+                        name="avatar"
+                        value={emoji}
+                        defaultChecked={emoji === "🦊"}
+                        className="sr-only peer"
+                      />
+                      <span className="peer-checked:bg-[#bc6c25]/15 peer-checked:ring-2 peer-checked:ring-[#bc6c25]/40 px-2 py-0.5 rounded-md transition duration-150">
+                        {emoji}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider">
+                  නව මුරපදයක් (New Password)
+                </label>
+                <input
+                  type="password"
+                  name="password"
+                  required
+                  placeholder="••••••••"
+                  className="w-full text-xs rounded-xl border border-[#e9e2d7] px-3.5 py-2.5 bg-[#fdfbf7] focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#52796f]/15 focus:border-[#52796f] font-semibold text-slate-800"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3 bg-[#bc6c25] hover:bg-[#a05c1e] text-white rounded-xl text-xs font-black tracking-wide transition shadow-md cursor-pointer text-center"
+              >
+                📝 ආරක්ෂිතව ලියාපදිංචි වන්න (Create Account)
+              </button>
+            </form>
+          )}
         </div>
 
-        {/* Global Footer info inside login gate too */}
-        <p className="text-[10px] text-slate-400 font-bold mt-6">
-          Developed by: H.D. Rusith Heshan Induwara • JFT-Basic Exam Companion
-        </p>
+        {/* Global Footer info / Admin Export toggle */}
+        <div className="text-center mt-6 space-y-3.5">
+          <p className="text-[10px] text-slate-400 font-bold">
+            Developed by: H.D. Rusith Heshan Induwara • JFT-Basic Exam Companion
+          </p>
+          <button
+            onClick={handleAdminExport}
+            className="inline-flex items-center gap-1.5 text-[10px] font-black px-3.5 py-1.5 rounded-lg border border-[#e9e2d7] text-[#52796f] hover:text-white bg-[#ece2d0]/20 hover:bg-[#52796f] transition-all cursor-pointer shadow-3xs"
+          >
+            📊 දත්ත ලේඛනය බාගන්න (Admin CSV Report)
+          </button>
+        </div>
       </div>
     );
   }
@@ -3263,13 +3320,13 @@ export default function App() {
                 ) : leaderboard.length > 0 ? (
                   <div className="space-y-3.5 max-h-[500px] overflow-y-auto pr-1.5 custom-scrollbar">
                     {leaderboard.map((player, idx) => {
-                      const isMe = userProfile && userProfile.email.toLowerCase() === player.email.toLowerCase();
+                      const isMe = userProfile && hashEmailSafe(userProfile.email) === player.id;
                       const rankingBadges = ["🥇", "🥈", "🥉"];
                       const isTopThree = idx < 3;
 
                       return (
                         <div
-                          key={player.email}
+                          key={player.id || idx}
                           className={`p-3.5 rounded-2xl border transition flex items-center justify-between gap-4 ${
                             isMe
                               ? "bg-[#bc6c25]/5 border-[#bc6c25] ring-2 ring-[#bc6c25]/10 shadow-sm"
