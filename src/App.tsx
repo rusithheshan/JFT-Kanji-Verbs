@@ -28,7 +28,10 @@ import {
   Coffee,
   Brain,
   Sun,
-  Moon
+  Moon,
+  Trophy,
+  Download,
+  Users
 } from "lucide-react";
 import { PRELOADED_KANJI, KanjiCard } from "./data/preloadedKanji";
 import { LearningStatus, UserProgress } from "./types";
@@ -516,6 +519,272 @@ export default function App() {
     }
   };
 
+  // --- Client JWT parser for Google authentication ---
+  const parseJwt = (token: string) => {
+    try {
+      const base64Url = token.split(".")[1];
+      const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+      const jsonPayload = decodeURIComponent(
+        window
+          .atob(base64)
+          .split("")
+          .map((c) => {
+            return "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2);
+          })
+          .join("")
+      );
+      return JSON.parse(jsonPayload);
+    } catch (e) {
+      return null;
+    }
+  };
+
+  // --- User Profile & Scoreboard Leaderboard States ---
+  const [userProfile, setUserProfile] = useState<{
+    username: string;
+    email: string;
+    avatar: string;
+    joinedAt: string;
+  } | null>(() => {
+    const saved = localStorage.getItem("jft_user_profile");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return null;
+  });
+
+  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [isLeaderboardLoading, setIsLeaderboardLoading] = useState(false);
+
+  // Load backend shared leaderboard data
+  const fetchLeaderboard = async () => {
+    try {
+      setIsLeaderboardLoading(true);
+      const res = await fetch("/api/leaderboard");
+      if (res.ok) {
+        const data = await res.json();
+        setLeaderboard(data.leaderboard || []);
+      }
+    } catch (e) {
+      console.error("Error loaded leaderboard:", e);
+    } finally {
+      setIsLeaderboardLoading(false);
+    }
+  };
+
+  // Sync profile progress counts with server database
+  const syncProfileWithServer = async (
+    profile = userProfile,
+    kanjis = progress,
+    vProgress = verbsProgress,
+    aProgress = adjectivesProgress,
+    gProgress = grammarProgress
+  ) => {
+    if (!profile) return;
+    try {
+      const kCount = Object.values(kanjis).filter((s) => s === "OK").length;
+      const vCount = Object.values(vProgress).filter((s) => s === "OK").length;
+      const aCount = Object.values(aProgress).filter((s) => s === "OK").length;
+      const gCount = Object.values(gProgress).filter((s) => s === "OK").length;
+
+      await fetch("/api/profile/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: profile.email,
+          username: profile.username,
+          avatar: profile.avatar,
+          kanjiProgress: kCount,
+          verbsProgress: vCount,
+          adjectivesProgress: aCount,
+          grammarProgress: gCount,
+        }),
+      });
+      // Fetch latest leaderboard
+      const res = await fetch("/api/leaderboard");
+      if (res.ok) {
+        const data = await res.json();
+        setLeaderboard(data.leaderboard || []);
+      }
+    } catch (e) {
+      console.error("Failed to sync progress with leaderboard:", e);
+    }
+  };
+
+  // Sync profile state changes to localStorage
+  useEffect(() => {
+    if (userProfile) {
+      localStorage.setItem("jft_user_profile", JSON.stringify(userProfile));
+      syncProfileWithServer(userProfile);
+    } else {
+      localStorage.removeItem("jft_user_profile");
+    }
+  }, [userProfile]);
+
+  // Handle Google OAuth and custom login initialization
+  useEffect(() => {
+    // Inject official Google One-Tap/Sign-In script client side
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    document.body.appendChild(script);
+
+    script.onload = () => {
+      try {
+        const client_id = (import.meta as any).env.VITE_GOOGLE_CLIENT_ID || "1028301820-fakegoogleid.apps.googleusercontent.com";
+        (window as any).google?.accounts.id.initialize({
+          client_id: client_id,
+          callback: handleGoogleSignInCallback,
+        });
+
+        // Try rendering immediately if target is present
+        const container = document.getElementById("google-login-gate-btn-container");
+        if (container && (window as any).google?.accounts?.id) {
+          (window as any).google.accounts.id.renderButton(container, {
+            theme: "outline",
+            size: "large",
+            width: 280
+          });
+        }
+      } catch (e) {
+        console.warn("Could not auto-initialize Google accounts client:", e);
+      }
+    };
+
+    fetchLeaderboard();
+
+    return () => {
+      try {
+        document.body.removeChild(script);
+      } catch (e) {}
+    };
+  }, []);
+
+  // Extra button-rendering triggers for state changes when showing Login Gate
+  useEffect(() => {
+    if (!userProfile) {
+      const renderBtn = () => {
+        const container = document.getElementById("google-login-gate-btn-container");
+        if (container && (window as any).google?.accounts?.id) {
+          (window as any).google.accounts.id.renderButton(container, {
+            theme: "outline",
+            size: "large",
+            width: 280
+          });
+        }
+      };
+      
+      // Attempt multiple times to handle race conditions with script load and DOM painting
+      renderBtn();
+      const t1 = setTimeout(renderBtn, 400);
+      const t2 = setTimeout(renderBtn, 1200);
+      const t3 = setTimeout(renderBtn, 2400);
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+        clearTimeout(t3);
+      };
+    }
+  }, [userProfile]);
+
+  const handleGoogleSignInCallback = (response: any) => {
+    try {
+      const payload = parseJwt(response.credential);
+      if (payload) {
+        const newProfile = {
+          username: payload.name || payload.given_name || "Google Learner",
+          email: payload.email,
+          avatar: payload.picture || "👤",
+          joinedAt: new Date().toISOString(),
+        };
+        setUserProfile(newProfile);
+        syncProfileWithServer(newProfile);
+      }
+    } catch (e) {
+      console.error("Google login token parsing failure:", e);
+    }
+  };
+
+  // Sync progress shifts with leaderboard server after slight delays
+  useEffect(() => {
+    if (userProfile) {
+      const timer = setTimeout(() => {
+        syncProfileWithServer(userProfile);
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [progress, verbsProgress, adjectivesProgress, grammarProgress]);
+
+  // Export full study records to a backup file
+  const downloadProgressJSON = () => {
+    try {
+      const backupData = {
+        version: "1.0.0",
+        timestamp: new Date().toISOString(),
+        userProfile,
+        progress,
+        verbsProgress,
+        adjectivesProgress,
+        grammarProgress,
+        srsRecords,
+        cards,
+      };
+      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `jft_japanese_progress_${userProfile ? userProfile.username.replace(/\s+/g, "_") : "guest"}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert("දත්ත බාගත කිරීමට නොහැකි විය. Backup failed.");
+    }
+  };
+
+  // Import full progress from backup file
+  const handleRestoreProgressJSON = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const backup = JSON.parse(event.target?.result as string);
+        if (!backup || typeof backup !== "object") {
+          throw new Error("Invalid backup format");
+        }
+
+        if (backup.userProfile) setUserProfile(backup.userProfile);
+        if (backup.progress) setProgress(backup.progress);
+        if (backup.verbsProgress) setVerbsProgress(backup.verbsProgress);
+        if (backup.adjectivesProgress) setAdjectivesProgress(backup.adjectivesProgress);
+        if (backup.grammarProgress) setGrammarProgress(backup.grammarProgress);
+        if (backup.srsRecords) setSrsRecords(backup.srsRecords);
+        if (backup.cards) setCards(backup.cards);
+
+        alert("🎉 ඔබගේ දත්ත සාර්ථකව ප්‍රතිෂ්ඨාපනය (Restored) කරන ලදී!");
+
+        if (backup.userProfile) {
+          syncProfileWithServer(
+            backup.userProfile,
+            backup.progress || {},
+            backup.verbsProgress || {},
+            backup.adjectivesProgress || {},
+            backup.grammarProgress || {}
+          );
+        }
+      } catch (err) {
+        alert("❌ වලංගු නොවන උපස්ථ ගොනුවකි (Invalid JSON file).");
+      }
+    };
+    reader.readAsText(file);
+  };
+
   // Update a card progress status
   const [lastSrsUpdate, setLastSrsUpdate] = useState<{ [key: string]: number }>({});
 
@@ -855,6 +1124,139 @@ export default function App() {
     });
   }, [grammarList, grammarProgress, activeGrammarFilter, grammarSearchQuery]);
 
+  if (!userProfile) {
+    return (
+      <div className="min-h-screen flex flex-col justify-center items-center bg-[#fdfbf7] p-4 text-[#352d28]" id="login-gate-container">
+        <div className="w-full max-w-md bg-white border border-[#e9e2d7] rounded-[32px] p-8 shadow-md relative overflow-hidden space-y-6">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-[#cad2c5]/25 rounded-bl-full pointer-events-none"></div>
+
+          {/* Palace Icon Badge */}
+          <div className="flex flex-col items-center text-center space-y-3">
+            <div className="w-16 h-16 rounded-2xl bg-[#52796f] flex items-center justify-center text-white font-black text-2xl shadow-md shadow-[#52796f]/20 scale-105">
+              漢字
+            </div>
+            <div>
+              <h2 className="text-xl font-black font-display text-[#354f52]">
+                JFT & N4 Learning Palace
+              </h2>
+              <span className="text-[10px] font-black text-white bg-[#bc6c25] px-2.5 py-0.5 rounded-full uppercase tracking-wider mt-1.5 inline-block">
+                Progress Account Login
+              </span>
+              <p className="text-xs text-[#84a98c] mt-2.5 font-medium leading-relaxed max-w-xs mx-auto">
+                ජපන් භාෂා ප්‍රශ්න සාර්ථකව පුහුණු වීමට කරුණාකර ප්‍රථමයෙන් ඔබගේ ගිණුමට ඇතුළු වන්න (Please sign in to save your active study progress).
+              </p>
+            </div>
+          </div>
+
+          {/* Google Sign-in mount button */}
+          <div className="space-y-4 pt-4 border-t border-[#f0ede6]">
+            <div className="flex flex-col items-center space-y-2">
+              <span className="text-[9px] font-black text-[#52796f] uppercase tracking-wider">
+                🔐 Login with Google Account
+              </span>
+              <div id="google-login-gate-btn-container" className="flex justify-center min-h-[46px] w-full max-w-[280px]"></div>
+            </div>
+
+            <div className="relative flex py-2 items-center">
+              <div className="flex-grow border-t border-slate-200/80"></div>
+              <span className="flex-shrink mx-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">or create manual account</span>
+              <div className="flex-grow border-t border-slate-200/80"></div>
+            </div>
+
+            {/* Manual Quick Create form */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const formData = new FormData(e.currentTarget);
+                const username = formData.get("username") as string;
+                const email = formData.get("email") as string;
+                const avatar = formData.get("avatar") as string;
+
+                if (!username.trim() || !email.trim()) {
+                  alert("කරුණාකර සියලුම තොරතුරු නිවැරදිව පුරවන්න.");
+                  return;
+                }
+
+                const manualProfile = {
+                  username,
+                  email,
+                  avatar,
+                  joinedAt: new Date().toISOString(),
+                };
+                setUserProfile(manualProfile);
+                syncProfileWithServer(manualProfile);
+              }}
+              className="space-y-4"
+            >
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider">
+                  Your Full Name (ඔබගේ නම)
+                </label>
+                <input
+                  type="text"
+                  name="username"
+                  required
+                  placeholder="e.g. Ruwan Silva"
+                  className="w-full text-xs rounded-xl border border-[#e9e2d7] px-3.5 py-2.5 bg-[#fdfbf7] focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#52796f]/15 focus:border-[#52796f]"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider">
+                  Email Address (ඊමේල් ලිපිනය)
+                </label>
+                <input
+                  type="email"
+                  name="email"
+                  required
+                  placeholder="e.g. ruwan@gmail.com"
+                  className="w-full text-xs rounded-xl border border-[#e9e2d7] px-3.5 py-2.5 bg-[#fdfbf7] focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#52796f]/15 focus:border-[#52796f]"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider mb-1">
+                  Choose Avatar Icon (අවතාරයක්)
+                </label>
+                <div className="grid grid-cols-5 gap-1.5 bg-[#fdfbf7] p-2 rounded-xl border border-[#e9e2d7] text-center">
+                  {["🦊", "🐼", "🚀", "🎓", "🗻", "🍣", "🌸", "🎏", "💡", "🥋"].map((emoji) => (
+                    <label
+                      key={emoji}
+                      className="flex items-center justify-center p-1.5 rounded-lg cursor-pointer hover:bg-white hover:scale-105 active:scale-95 transition-all text-base shadow-3xs"
+                    >
+                      <input
+                        type="radio"
+                        name="avatar"
+                        value={emoji}
+                        defaultChecked={emoji === "🦊"}
+                        className="sr-only peer"
+                      />
+                      <span className="peer-checked:bg-[#bc6c25]/15 peer-checked:ring-2 peer-checked:ring-[#bc6c25]/40 px-2 py-0.5 rounded-md transition duration-150">
+                        {emoji}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3 bg-[#52796f] hover:bg-[#354f52] text-white rounded-xl text-xs font-black tracking-wide transition shadow-md cursor-pointer text-center"
+              >
+                📥 Start Learning Now (ඇතුල් වන්න)
+              </button>
+            </form>
+          </div>
+        </div>
+
+        {/* Global Footer info inside login gate too */}
+        <p className="text-[10px] text-slate-400 font-bold mt-6">
+          Developed by: H.D. Rusith Heshan Induwara • JFT-Basic Exam Companion
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col transition-colors duration-200 bg-[#fdfbf7] text-[#352d28]" id="main-jft-container">
       {/* Dynamic Header */}
@@ -984,7 +1386,7 @@ export default function App() {
               <div className="flex flex-col shrink-0">
                 <div className="flex items-center gap-1 leading-none">
                   <span className="text-[8px] font-bold text-[#84a98c] tracking-wider uppercase block">
-                    Mastery
+                    Mastery {leaderboard.length > 0 && `(Students: ${leaderboard.length})`}
                   </span>
                   <span className="text-[10px] font-black text-[#52796f]">{percentComplete}%</span>
                 </div>
@@ -1023,7 +1425,7 @@ export default function App() {
             </div>
 
             {/* Switcher Grid: hidden on mobile by default unless isMobileMenuOpen is true */}
-            <div className={`${isMobileMenuOpen ? "grid" : "hidden md:grid"} grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-8 gap-2 bg-[#faf8f5] border border-[#e9e2d7]/80 p-2 rounded-2xl w-full shadow-3xs transition-all duration-300`}>
+            <div className={`${isMobileMenuOpen ? "grid" : "hidden md:grid"} grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-2 bg-[#faf8f5] border border-[#e9e2d7]/80 p-2 rounded-2xl w-full shadow-3xs transition-all duration-300`}>
               
               {/* Tab 1: Alphabet */}
               <button
@@ -1152,6 +1554,22 @@ export default function App() {
                 }`}
               >
                 <HelpCircle className={`w-4 h-4 ${activeTab === "quiz" ? "text-white animate-spin" : "text-emerald-600"}`} /> Quiz
+              </button>
+
+              {/* Tab 10: Profile & Leaderboard (ප්‍රොෆයිල් සහ ලීඩර්බෝඩ්) */}
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab("profile");
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`px-3 py-3 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
+                  activeTab === "profile"
+                    ? "bg-[#bc6c25] text-white shadow-md border-0 ring-4 ring-[#bc6c25]/15"
+                    : "text-[#354f52] hover:bg-white hover:text-[#bc6c25] border border-[#e9e2d7]/50"
+                }`}
+              >
+                <Trophy className={`w-4 h-4 ${activeTab === "profile" ? "text-white" : "text-amber-500 animate-pulse"}`} /> Leaders
               </button>
 
             </div>
@@ -1469,14 +1887,14 @@ export default function App() {
             <div className="space-y-6">
             
             {/* Elegant Study vs Test Mode Switcher */}
-            <div className="flex gap-1 bg-[#ece2d0]/30 dark:bg-slate-800 p-1.5 rounded-2xl border border-[#e9e2d7] dark:border-slate-800 max-w-md mx-auto">
+            <div className="flex gap-1.5 bg-[#f0ede6] p-1.5 rounded-2xl border border-[#e9e2d7] max-w-md mx-auto">
               <button
                 type="button"
                 onClick={() => setVerbsViewMode("learn")}
-                className={`flex-1 py-2 rounded-xl text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer text-center ${
+                className={`flex-1 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer text-center ${
                   verbsViewMode === "learn"
-                    ? "bg-[#52796f] text-white shadow-xs font-black"
-                    : "text-[#52796f] dark:text-slate-350 hover:bg-[#ece2d0]/60 dark:hover:bg-slate-700/60"
+                    ? "bg-[#52796f] text-white shadow-md font-black"
+                    : "text-[#52796f] hover:text-[#bc6c25] hover:bg-white/70"
                 }`}
               >
                 📚 Study List (ලැයිස්තුව)
@@ -1484,10 +1902,10 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setVerbsViewMode("test")}
-                className={`flex-1 py-2 rounded-xl text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer text-center ${
+                className={`flex-1 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer text-center ${
                   verbsViewMode === "test"
-                    ? "bg-[#52796f] text-white shadow-xs font-black"
-                    : "text-[#52796f] dark:text-slate-350 hover:bg-[#ece2d0]/60 dark:hover:bg-slate-700/60"
+                    ? "bg-[#52796f] text-white shadow-md font-black"
+                    : "text-[#52796f] hover:text-[#bc6c25] hover:bg-white/70"
                 }`}
               >
                 🧠 Test Practice (පරීක්ෂණය)
@@ -1687,12 +2105,12 @@ export default function App() {
           <div className="max-w-xl mx-auto space-y-6">
                 
             {/* Context/Assessment description box */}
-            <div className="bg-white dark:bg-slate-900 rounded-[24px] border border-[#e9e2d7] dark:border-slate-800 p-5 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="bg-white rounded-[24px] border border-[#e9e2d7] p-5 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
-                <h3 className="font-display font-medium text-sm text-[#354f52] dark:text-emerald-300 flex items-center gap-1.5" id="verb-test-mode-title">
+                <h3 className="font-display font-medium text-sm text-[#354f52] flex items-center gap-1.5" id="verb-test-mode-title">
                   <Sparkles className="w-4 h-4 text-[#bc6c25] animate-spin" /> Verbs SRS Evaluation Deck (ක්‍රියාපද පරීක්ෂණය)
                 </h3>
-                <p className="text-xs text-[#84a98c] dark:text-slate-400 mt-1 leading-relaxed">
+                <p className="text-xs text-[#84a98c] mt-1 leading-relaxed">
                   This deck is sorted based on Spaced Repetition weights. Click the card to flip and reveal all conjugation states and translation. Mark "Yes" if you remembered it correctly, or "No" to review it more often.
                 </p>
               </div>
@@ -1700,7 +2118,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={shuffleVerbTestDeck}
-                className="p-2.5 bg-[#f0ede6] dark:bg-slate-800 hover:bg-[#cad2c5]/40 border border-[#e9e2d7] dark:border-slate-700 hover:border-[#84a98c] text-[#52796f] dark:text-slate-200 rounded-xl transition duration-150 inline-flex items-center gap-1.5 text-xs font-bold shrink-0 shadow-xs cursor-pointer"
+                className="p-2.5 bg-[#f0ede6] hover:bg-[#cad2c5]/45 border border-[#e9e2d7] hover:border-[#84a98c] text-[#52796f] rounded-xl transition duration-150 inline-flex items-center gap-1.5 text-xs font-bold shrink-0 shadow-xs cursor-pointer"
                 title="Shuffle Deck"
               >
                 <Shuffle className="w-3.5 h-3.5" /> Shuffle
@@ -1712,14 +2130,14 @@ export default function App() {
                 
                 {/* Visual Tracker numbers progress */}
                 <div className="flex justify-between items-center px-1">
-                  <span className="text-xs font-bold text-[#84a98c] dark:text-slate-400 tracking-wider">
-                    DECK POSITION: <span className="font-mono text-[#2f3e46] dark:text-slate-200 bg-[#f0ede6] dark:bg-slate-850 px-2 py-0.5 rounded-md font-extrabold">{currentVerbTestIndex + 1}</span> / {verbTestDeck.length}
+                  <span className="text-xs font-bold text-[#84a98c] tracking-wider">
+                    DECK POSITION: <span className="font-mono text-[#2f3e46] bg-[#f0ede6] px-2 py-0.5 rounded-md font-extrabold">{currentVerbTestIndex + 1}</span> / {verbTestDeck.length}
                   </span>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] uppercase font-bold text-[#84a98c] dark:text-slate-400 tracking-wider">
+                    <span className="text-[10px] uppercase font-bold text-[#84a98c] tracking-wider">
                       Learned Status:
                     </span>
-                    <span className="font-mono text-xs font-bold py-0.5 px-2 bg-[#f0ede6] dark:bg-slate-850 text-[#2f3e46] dark:text-slate-200 rounded-md">
+                    <span className="font-mono text-xs font-bold py-0.5 px-2 bg-[#f0ede6] text-[#2f3e46] rounded-md">
                       {verbsProgress[verbTestDeck[currentVerbTestIndex]?.id] || "UNSTUDIED"}
                     </span>
                   </div>
@@ -1757,7 +2175,7 @@ export default function App() {
                         setIsVerbTestCardRevealed(false);
                       }
                     }}
-                    className="py-3 px-4 bg-white dark:bg-slate-900 hover:bg-[#f0ede6] dark:hover:bg-slate-850 disabled:bg-[#fdfbf7] dark:disabled:bg-slate-800 disabled:text-[#cad2c5] dark:disabled:text-slate-600 border border-[#e9e2d7] dark:border-slate-800 rounded-xl font-sans font-bold text-xs text-[#52796f] dark:text-slate-200 transition inline-flex items-center justify-center gap-2 cursor-pointer"
+                    className="py-3 px-4 bg-white hover:bg-[#f0ede6] disabled:bg-[#fdfbf7] disabled:text-[#cad2c5] border border-[#e9e2d7] rounded-xl font-sans font-bold text-xs text-[#52796f] transition inline-flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <ArrowLeft className="w-4 h-4" /> PREVIOUS
                   </button>
@@ -1774,7 +2192,7 @@ export default function App() {
                         }
                       }
                     }}
-                    className="py-3 px-4 bg-[#52796f] dark:bg-emerald-600 hover:bg-[#354f52] dark:hover:bg-emerald-700 text-white rounded-xl font-sans font-black text-xs transition inline-flex items-center justify-center gap-2 shadow-md hover:shadow-lg cursor-pointer"
+                    className="py-3 px-4 bg-[#52796f] hover:bg-[#354f52] text-white rounded-xl font-sans font-black text-xs transition inline-flex items-center justify-center gap-2 shadow-md hover:shadow-lg cursor-pointer"
                   >
                     NEXT <ArrowRight className="w-4 h-4" />
                   </button>
@@ -1782,8 +2200,8 @@ export default function App() {
 
                 {/* Additional Quick Action buttons if card has been revealed */}
                 {isVerbTestCardRevealed && (
-                  <div className="p-4 bg-white dark:bg-slate-900 border border-[#e9e2d7] dark:border-slate-800 rounded-2xl shadow-sm text-center">
-                    <p className="text-xs font-bold text-[#52796f] dark:text-emerald-400 mb-2">Did you recall this verb meaning correctly?</p>
+                  <div className="p-4 bg-white border border-[#e9e2d7] rounded-2xl shadow-sm text-center">
+                    <p className="text-xs font-bold text-[#52796f] mb-2">Did you recall this verb meaning correctly?</p>
                     <div className="flex justify-center gap-3">
                       <button
                         onClick={() => {
@@ -1809,7 +2227,7 @@ export default function App() {
                             }, 350);
                           }
                         }}
-                        className="py-2.5 px-4 bg-[#52796f] dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white rounded-xl text-xs font-bold duration-150 inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+                        className="py-2.5 px-4 bg-[#52796f] hover:bg-[#354f52] text-white rounded-xl text-xs font-bold duration-150 inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
                       >
                         <ThumbsUp className="w-3.5 h-3.5" /> Yes, remembered!
                       </button>
@@ -1818,7 +2236,7 @@ export default function App() {
                 )}
               </div>
             ) : (
-              <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-2xl border border-[#e9e2d7] dark:border-slate-800">
+              <div className="p-12 text-center bg-white rounded-2xl border border-[#e9e2d7]">
                 <p className="text-sm font-semibold text-[#84a98c]">Your study deck is currently empty.</p>
               </div>
             )}
@@ -1833,14 +2251,14 @@ export default function App() {
             <div className="space-y-6">
 
             {/* Elegant Study vs Test Mode Switcher */}
-            <div className="flex gap-1 bg-[#ece2d0]/30 dark:bg-slate-800 p-1.5 rounded-2xl border border-[#e9e2d7] dark:border-slate-800 max-w-md mx-auto">
+            <div className="flex gap-1.5 bg-[#f0ede6] p-1.5 rounded-2xl border border-[#e9e2d7] max-w-md mx-auto">
               <button
                 type="button"
                 onClick={() => setAdjectivesViewMode("learn")}
-                className={`flex-1 py-2 rounded-xl text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer text-center ${
+                className={`flex-1 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer text-center ${
                   adjectivesViewMode === "learn"
-                    ? "bg-[#52796f] text-white shadow-xs font-black"
-                    : "text-[#52796f] dark:text-slate-350 hover:bg-[#ece2d0]/60 dark:hover:bg-slate-700/60"
+                    ? "bg-[#52796f] text-white shadow-md font-black"
+                    : "text-[#52796f] hover:text-[#bc6c25] hover:bg-white/70"
                 }`}
               >
                 📚 Study List (ලැයිස්තුව)
@@ -1848,10 +2266,10 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setAdjectivesViewMode("test")}
-                className={`flex-1 py-2 rounded-xl text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer text-center ${
+                className={`flex-1 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer text-center ${
                   adjectivesViewMode === "test"
-                    ? "bg-[#52796f] text-white shadow-xs font-black"
-                    : "text-[#52796f] dark:text-slate-350 hover:bg-[#ece2d0]/60 dark:hover:bg-slate-700/60"
+                    ? "bg-[#52796f] text-white shadow-md font-black"
+                    : "text-[#52796f] hover:text-[#bc6c25] hover:bg-white/70"
                 }`}
               >
                 🧠 Test Practice (පරීක්ෂණය)
@@ -2091,12 +2509,12 @@ export default function App() {
           <div className="max-w-xl mx-auto space-y-6">
                 
             {/* Context/Assessment description box */}
-            <div className="bg-white dark:bg-slate-900 rounded-[24px] border border-[#e9e2d7] dark:border-slate-850 p-5 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="bg-white rounded-[24px] border border-[#e9e2d7] p-5 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
-                <h3 className="font-display font-medium text-sm text-[#354f52] dark:text-emerald-300 flex items-center gap-1.5" id="adj-test-mode-title">
+                <h3 className="font-display font-medium text-sm text-[#354f52] flex items-center gap-1.5" id="adj-test-mode-title">
                   <Sparkles className="w-4 h-4 text-[#bc6c25] animate-spin" /> Adjectives SRS Evaluation Deck (විශේෂණ පද පරීක්ෂණය)
                 </h3>
-                <p className="text-xs text-[#84a98c] dark:text-slate-400 mt-1 leading-relaxed">
+                <p className="text-xs text-[#84a98c] mt-1 leading-relaxed">
                   This deck is sorted based on Spaced Repetition weights. Click the card to flip and reveal its type (i/na adjective) and detailed translation. Mark "Yes" if you remembered it correctly, or "No" to review it more often.
                 </p>
               </div>
@@ -2104,7 +2522,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={shuffleAdjTestDeck}
-                className="p-2.5 bg-[#f0ede6] dark:bg-slate-800 hover:bg-[#cad2c5]/40 border border-[#e9e2d7] dark:border-slate-700 hover:border-[#84a98c] text-[#52796f] dark:text-slate-200 rounded-xl transition duration-150 inline-flex items-center gap-1.5 text-xs font-bold shrink-0 shadow-xs cursor-pointer"
+                className="p-2.5 bg-[#f0ede6] hover:bg-[#cad2c5]/45 border border-[#e9e2d7] hover:border-[#84a98c] text-[#52796f] rounded-xl transition duration-150 inline-flex items-center gap-1.5 text-xs font-bold shrink-0 shadow-xs cursor-pointer"
                 title="Shuffle Deck"
               >
                 <Shuffle className="w-3.5 h-3.5" /> Shuffle
@@ -2116,14 +2534,14 @@ export default function App() {
                 
                 {/* Visual Tracker numbers progress */}
                 <div className="flex justify-between items-center px-1">
-                  <span className="text-xs font-bold text-[#84a98c] dark:text-slate-400 tracking-wider">
-                    DECK POSITION: <span className="font-mono text-[#2f3e46] dark:text-slate-200 bg-[#f0ede6] dark:bg-slate-850 px-2 py-0.5 rounded-md font-extrabold">{currentAdjTestIndex + 1}</span> / {adjTestDeck.length}
+                  <span className="text-xs font-bold text-[#84a98c] tracking-wider">
+                    DECK POSITION: <span className="font-mono text-[#2f3e46] bg-[#f0ede6] px-2 py-0.5 rounded-md font-extrabold">{currentAdjTestIndex + 1}</span> / {adjTestDeck.length}
                   </span>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] uppercase font-bold text-[#84a98c] dark:text-slate-400 tracking-wider">
+                    <span className="text-[10px] uppercase font-bold text-[#84a98c] tracking-wider">
                       Learned Status:
                     </span>
-                    <span className="font-mono text-xs font-bold py-0.5 px-2 bg-[#f0ede6] dark:bg-slate-850 text-[#2f3e46] dark:text-slate-200 rounded-md">
+                    <span className="font-mono text-xs font-bold py-0.5 px-2 bg-[#f0ede6] text-[#2f3e46] rounded-md">
                       {adjectivesProgress[adjTestDeck[currentAdjTestIndex]?.id] || "UNSTUDIED"}
                     </span>
                   </div>
@@ -2161,7 +2579,7 @@ export default function App() {
                         setIsAdjTestCardRevealed(false);
                       }
                     }}
-                    className="py-3 px-4 bg-white dark:bg-slate-900 hover:bg-[#f0ede6] dark:hover:bg-slate-850 disabled:bg-[#fdfbf7] dark:disabled:bg-slate-800 disabled:text-[#cad2c5] dark:disabled:text-slate-600 border border-[#e9e2d7] dark:border-slate-800 rounded-xl font-sans font-bold text-xs text-[#52796f] dark:text-slate-200 transition inline-flex items-center justify-center gap-2 cursor-pointer"
+                    className="py-3 px-4 bg-white hover:bg-[#f0ede6] disabled:bg-[#fdfbf7] disabled:text-[#cad2c5] border border-[#e9e2d7] rounded-xl font-sans font-bold text-xs text-[#52796f] transition inline-flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <ArrowLeft className="w-4 h-4" /> PREVIOUS
                   </button>
@@ -2178,7 +2596,7 @@ export default function App() {
                         }
                       }
                     }}
-                    className="py-3 px-4 bg-[#52796f] dark:bg-emerald-600 hover:bg-[#354f52] dark:hover:bg-emerald-700 text-white rounded-xl font-sans font-black text-xs transition inline-flex items-center justify-center gap-2 shadow-md hover:shadow-lg cursor-pointer"
+                    className="py-3 px-4 bg-[#52796f] hover:bg-[#354f52] text-white rounded-xl font-sans font-black text-xs transition inline-flex items-center justify-center gap-2 shadow-md hover:shadow-lg cursor-pointer"
                   >
                     NEXT <ArrowRight className="w-4 h-4" />
                   </button>
@@ -2186,8 +2604,8 @@ export default function App() {
 
                 {/* Additional Quick Action buttons if card has been revealed */}
                 {isAdjTestCardRevealed && (
-                  <div className="p-4 bg-white dark:bg-slate-900 border border-[#e9e2d7] dark:border-slate-800 rounded-2xl shadow-sm text-center">
-                    <p className="text-xs font-bold text-[#52796f] dark:text-emerald-400 mb-2">Did you recall this adjective meaning correctly?</p>
+                  <div className="p-4 bg-white border border-[#e9e2d7] rounded-2xl shadow-sm text-center">
+                    <p className="text-xs font-bold text-[#52796f] mb-2">Did you recall this adjective meaning correctly?</p>
                     <div className="flex justify-center gap-3">
                       <button
                         onClick={() => {
@@ -2213,7 +2631,7 @@ export default function App() {
                             }, 350);
                           }
                         }}
-                        className="py-2.5 px-4 bg-[#52796f] dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white rounded-xl text-xs font-bold duration-150 inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+                        className="py-2.5 px-4 bg-[#52796f] hover:bg-[#354f52] text-white rounded-xl text-xs font-bold duration-150 inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
                       >
                         <ThumbsUp className="w-3.5 h-3.5" /> Yes, remembered!
                       </button>
@@ -2222,7 +2640,7 @@ export default function App() {
                 )}
               </div>
             ) : (
-              <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-2xl border border-[#e9e2d7] dark:border-slate-800">
+              <div className="p-12 text-center bg-white rounded-2xl border border-[#e9e2d7]">
                 <p className="text-sm font-semibold text-[#84a98c]">Your study deck is currently empty.</p>
               </div>
             )}
@@ -2449,6 +2867,385 @@ export default function App() {
                 }
               }}
             />
+          </div>
+        )}
+
+        {/* TAB 8: PROFILE AND GLOBAL LEADERBOARD */}
+        {activeTab === "profile" && (
+          <div className="space-y-8 max-w-6xl mx-auto" id="tab-panel-profile">
+            
+            {/* Header banner */}
+            <div className="p-6 bg-white rounded-[28px] border border-[#e9e2d7] shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+              <div>
+                <h3 className="font-display font-black text-xl text-[#354f52] flex items-center gap-2">
+                  <Trophy className="w-6 h-6 text-amber-500 animate-bounce" /> Profile & Collective Leaderboard (ප්‍රොෆයිල් සහ ශ්‍රේණිගත කිරීම්)
+                </h3>
+                <p className="text-xs text-[#84a98c] mt-1.5 leading-relaxed">
+                  මෙතැනින් ඔබට ඔබේම ගිණුමක් සකසාගෙන ප්‍රගතිය ජාලය හරහා උඩුගත (Sync) කළ හැකියි. ලීඩර්බෝඩ් එක හරහා අනෙකුත් සිසුන් සමඟ තරඟ කිරීමට සහ ප්‍රගති දත්ත (Progress JSON Backup) බාගත කිරීමටද හැකියාව ඇත.
+                </p>
+              </div>
+
+              {/* Instant JSON data Backup Controls */}
+              <div className="flex flex-col sm:flex-row gap-2 shrink-0 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={downloadProgressJSON}
+                  className="py-2.5 px-4 bg-[#52796f] hover:bg-[#354f52] text-white rounded-xl text-xs font-black transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                >
+                  <Download className="w-4 h-4" /> Download Backup (.json)
+                </button>
+                <label className="py-2.5 px-4 bg-white border border-[#52796f] hover:bg-[#faf8f5] text-[#52796f] rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-xs text-center">
+                  <Upload className="w-4 h-4" /> Upload Backup (.json)
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={handleRestoreProgressJSON}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              
+              {/* Left Column: Account Profile setup details */}
+              <div className="lg:col-span-5 space-y-6">
+                {!userProfile ? (
+                  <div className="bg-white p-6 rounded-[24px] border border-[#e9e2d7] shadow-sm space-y-6">
+                    <div>
+                      <h4 className="font-display font-extrabold text-sm text-[#354f52] uppercase tracking-wider flex items-center gap-1.5">
+                        👤 Create Your Profile (නව ගිණුමක් සාදන්න)
+                      </h4>
+                      <p className="text-[11px] text-[#84a98c] mt-1">
+                        මාලිගාවට පිවිසීමට ඔබේ නම, ඊමේල් ලිපිනය සහ කැමති අවතාරයක් තෝරාගන්න.
+                      </p>
+                    </div>
+
+                    {/* Dynamic Google Sign-In Integrations */}
+                    <div className="p-4 bg-[#fdfbf7] border border-[#e9e2d7]/80 rounded-xl space-y-3.5">
+                      <span className="text-[10px] font-black text-[#bc6c25] uppercase tracking-widest block">
+                        ⚡ Google Sign-In Option
+                      </span>
+                      
+                      {/* Mount Point for dynamic Google SDK Button */}
+                      <div id="google-signin-btn-container" className="w-full"></div>
+
+                      <div className="flex items-center justify-center gap-2 py-0.5 text-xs text-slate-400">
+                        <div className="h-px bg-[#e9e2d7] flex-1"></div>
+                        <span className="shrink-0 font-bold uppercase tracking-wider text-[9px]">Or Quick Login</span>
+                        <div className="h-px bg-[#e9e2d7] flex-1"></div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const randomId = Math.floor(100 + Math.random() * 900);
+                          const mockName = prompt("ඔබගේ නම ඇතුළත් කරන්න (Your Name):", "Guest Learner") || "Guest Learner";
+                          const mockEmail = `${mockName.toLowerCase().replace(/\s+/g, "")}${randomId}@mockgoogle.com`;
+                          const mockAvatars = ["🦊", "🐼", "🚀", "🎓", "🗻", "🍣", "🌸", "🎏"];
+                          const chosenAvatar = mockAvatars[Math.floor(Math.random() * mockAvatars.length)];
+
+                          const simulatedProfile = {
+                            username: mockName,
+                            email: mockEmail,
+                            avatar: chosenAvatar,
+                            joinedAt: new Date().toISOString(),
+                          };
+                          setUserProfile(simulatedProfile);
+                        }}
+                        className="w-full py-2 bg-white border border-[#bc6c25]/40 hover:bg-[#ece2d0]/20 rounded-lg text-xs font-bold text-[#bc6c25] transition flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs"
+                      >
+                        🌟 One-Click Google Login Simulation
+                      </button>
+                    </div>
+
+                    {/* Manual signup form fallback */}
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const formData = new FormData(e.currentTarget);
+                        const username = formData.get("username") as string;
+                        const email = formData.get("email") as string;
+                        const avatar = formData.get("avatar") as string;
+
+                        if (!username.trim() || !email.trim()) {
+                          alert("කරුණාකර සියලුම තොරතුරු නිවැරදිව පුරවන්න.");
+                          return;
+                        }
+
+                        setUserProfile({
+                          username,
+                          email,
+                          avatar,
+                          joinedAt: new Date().toISOString(),
+                        });
+                      }}
+                      className="space-y-4 pt-2 border-t border-[#f0ede6]"
+                    >
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider">
+                          Username (පරිශීලක නාමය)
+                        </label>
+                        <input
+                          type="text"
+                          name="username"
+                          required
+                          placeholder="e.g. Ruwan Silva"
+                          className="w-full text-xs rounded-xl border border-[#e9e2d7] px-3.5 py-2.5 bg-[#fdfbf7] focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#52796f]/15 focus:border-[#52796f]"
+                        />
+                      </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider">
+                          Email (ඊමේල් ලිපිනය - leaderboard sync සඳහා)
+                        </label>
+                        <input
+                          type="email"
+                          name="email"
+                          required
+                          placeholder="e.g. ruwan@gmail.com"
+                          className="w-full text-xs rounded-xl border border-[#e9e2d7] px-3.5 py-2.5 bg-[#fdfbf7] focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#52796f]/15 focus:border-[#52796f]"
+                        />
+                      </div>
+
+                      {/* Avatar Picker */}
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-black text-[#52796f] uppercase tracking-wider mb-1">
+                          Choose Avatar (අවතාරයක් තෝරන්න)
+                        </label>
+                        <div className="grid grid-cols-5 gap-2 bg-[#fdfbf7] p-2.5 rounded-xl border border-[#e9e2d7] shadow-3xs text-center">
+                          {["🦊", "🐼", "🚀", "🎓", "🗻", "🍣", "🌸", "🎏", "💡", "🥋"].map((emoji) => (
+                            <label
+                              key={emoji}
+                              className="flex items-center justify-center p-2 rounded-lg cursor-pointer hover:bg-white hover:scale-110 active:scale-95 transition-all text-lg shadow-3xs"
+                            >
+                              <input
+                                type="radio"
+                                name="avatar"
+                                value={emoji}
+                                defaultChecked={emoji === "🦊"}
+                                className="sr-only peer"
+                              />
+                              <span className="peer-checked:bg-[#bc6c25]/15 peer-checked:ring-2 peer-checked:ring-[#bc6c25]/50 px-2 py-1 rounded-md transition duration-150">
+                                {emoji}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        className="w-full py-3 bg-[#52796f] hover:bg-[#354f52] text-white rounded-xl text-xs font-black tracking-wide transition shadow-md cursor-pointer"
+                      >
+                        💾 Create Account & Sync Score
+                      </button>
+                    </form>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {/* Active logged-in profile card */}
+                    <div className="bg-white p-6 rounded-[28px] border border-[#e9e2d7] shadow-sm space-y-6 relative overflow-hidden">
+                      {/* Soft decorative background element */}
+                      <div className="absolute top-0 right-0 w-28 h-28 bg-[#cad2c5]/20 rounded-bl-full pointer-events-none"></div>
+
+                      <div className="flex items-center gap-4 relative z-10">
+                        {userProfile.avatar.startsWith("http") ? (
+                          <img
+                            src={userProfile.avatar}
+                            alt="Avatar"
+                            referrerPolicy="no-referrer"
+                            className="w-16 h-16 rounded-full border-2 border-[#bc6c25] object-cover bg-[#fdfbf7] shadow-sm"
+                          />
+                        ) : (
+                          <div className="w-16 h-16 rounded-full bg-[#ece2d0] border-2 border-[#bc6c25] flex items-center justify-center text-3xl shadow-sm">
+                            {userProfile.avatar}
+                          </div>
+                        )}
+
+                        <div>
+                          <span className="text-[9px] font-black text-white bg-[#bc6c25] px-2 py-0.5 rounded-full uppercase tracking-wider">
+                            Active Student
+                          </span>
+                          <h4 className="font-display font-black text-base text-[#354f52] mt-1">{userProfile.username}</h4>
+                          <p className="text-[10px] text-slate-400 font-bold">{userProfile.email}</p>
+                        </div>
+                      </div>
+
+                      <div className="border-t border-[#f0ede6] pt-4 space-y-3.5">
+                        <span className="text-[10px] font-black text-[#52796f] uppercase tracking-wider block">
+                          📂 Current Performance Records (ප්‍රගතිය)
+                        </span>
+
+                        <div className="grid grid-cols-2 gap-3.5">
+                          <div className="p-3 bg-[#fdfbf7] rounded-xl border border-[#e9e2d7] text-center shadow-3xs">
+                            <span className="text-[9px] font-bold text-[#84a98c] block uppercase">Kanji</span>
+                            <span className="text-sm font-black text-[#52796f]">{okCount} <span className="text-[10px] font-medium text-slate-400">/ {cards.length}</span></span>
+                          </div>
+                          <div className="p-3 bg-[#fdfbf7] rounded-xl border border-[#e9e2d7] text-center shadow-3xs">
+                            <span className="text-[9px] font-bold text-[#84a98c] block uppercase">Verbs</span>
+                            <span className="text-sm font-black text-[#52796f]">{okVerbsCount} <span className="text-[10px] font-medium text-slate-400">/ {verbs.length}</span></span>
+                          </div>
+                          <div className="p-3 bg-[#fdfbf7] rounded-xl border border-[#e9e2d7] text-center shadow-3xs">
+                            <span className="text-[9px] font-bold text-[#84a98c] block uppercase">Adjectives</span>
+                            <span className="text-sm font-black text-[#52796f]">{okAdjectivesCount} <span className="text-[10px] font-medium text-slate-400">/ {adjectives.length}</span></span>
+                          </div>
+                          <div className="p-3 bg-[#fdfbf7] rounded-xl border border-[#e9e2d7] text-center shadow-3xs">
+                            <span className="text-[9px] font-bold text-[#84a98c] block uppercase">Verbs</span>
+                            <span className="text-sm font-black text-[#52796f]">{okVerbsCount} <span className="text-[10px] font-medium text-slate-400">/ {verbs.length}</span></span>
+                          </div>
+                          <div className="p-3 bg-[#fdfbf7] rounded-xl border border-[#e9e2d7] text-center shadow-3xs">
+                            <span className="text-[9px] font-bold text-[#84a98c] block uppercase">Adjectives</span>
+                            <span className="text-sm font-black text-[#52796f]">{okAdjectivesCount} <span className="text-[10px] font-medium text-slate-400">/ {adjectives.length}</span></span>
+                          </div>
+                          <div className="p-3 bg-[#fdfbf7] rounded-xl border border-[#e9e2d7] text-center shadow-3xs">
+                            <span className="text-[9px] font-bold text-[#84a98c] block uppercase">Grammar</span>
+                            <span className="text-sm font-black text-[#52796f]">{okGrammarCount} <span className="text-[10px] font-medium text-slate-400">/ {grammarList.length}</span></span>
+                          </div>
+                        </div>
+
+                        {/* Grand Total Progress representation */}
+                        <div className="bg-[#ece2d0]/20 border border-[#e9e2d7] rounded-xl p-3.5 text-center shadow-3xs">
+                          <span className="text-[10px] font-black text-[#bc6c25] uppercase tracking-wider">🏆 COMPILATION SCORE (SCOREBOARD SCORE)</span>
+                          <p className="text-3xl font-display font-black text-[#354f52] mt-1">
+                            {okCount + okVerbsCount + okAdjectivesCount + okGrammarCount}
+                          </p>
+                          <p className="text-[9px] font-bold text-[#84a98c] mt-0.5">Sum of all cards mastered with status "OK"</p>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (confirm("ඔබගේ වත්මන් Profile එකෙන් ඉවත් වීමට අවශ්‍ය ද? Are you sure you want to log out?")) {
+                              setUserProfile(null);
+                            }
+                          }}
+                          className="flex-1 py-2.5 bg-white border border-[#bc6c25] hover:bg-[#fdfbf7] rounded-xl text-xs font-bold text-[#bc6c25] transition cursor-pointer text-center shadow-3xs"
+                        >
+                          🚪 Logout / Switch Profile
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => syncProfileWithServer(userProfile)}
+                          className="py-2.5 px-4 bg-[#cad2c5] hover:bg-[#cad2c5]/85 border border-[#e9e2d7] text-[#354f52] rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-3xs"
+                          title="Force Sync Now"
+                        >
+                          🔄 Sync Now
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Right Column: Dynamic Real-time collective leaderboard */}
+              <div className="lg:col-span-7 bg-white p-6 rounded-[28px] border border-[#e9e2d7] shadow-sm space-y-6">
+                <div className="flex justify-between items-center pb-2 border-b border-[#f0ede6]">
+                  <div>
+                    <h4 className="font-display font-black text-sm text-[#354f52] uppercase tracking-wider flex items-center gap-1.5">
+                      <Trophy className="w-4 h-4 text-amber-500 animate-pulse" /> Live Scoreboard Leaderboard (සිසුන්ගේ ශ්‍රේණිගත කිරීම)
+                    </h4>
+                    <p className="text-[10px] text-[#84a98c] mt-0.5">
+                      සියලුම සිසුන්ගේ පාඩම් නිමකළ කාඩ්පත් ප්‍රමාණයන් (OK Score) අනුව ශ්‍රේණිගත කිරීම්.
+                    </p>
+                  </div>
+                  
+                  <button
+                    type="button"
+                    onClick={fetchLeaderboard}
+                    className="p-1 px-2 text-[10px] font-bold bg-[#fdfbf7] border border-[#e9e2d7] rounded-lg hover:border-[#84a98c] text-[#52796f] transition"
+                  >
+                    Refresh 🔄
+                  </button>
+                </div>
+
+                {isLeaderboardLoading ? (
+                  <div className="p-16 text-center">
+                    <div className="w-10 h-10 border-4 border-t-transparent border-[#52796f] animate-spin rounded-full inline-block mb-3"></div>
+                    <p className="text-xs font-semibold text-slate-400">ලීඩර්බෝඩ් දත්ත පූරණය වෙමින් පවතී (Loading ranking data)...</p>
+                  </div>
+                ) : leaderboard.length > 0 ? (
+                  <div className="space-y-3.5 max-h-[500px] overflow-y-auto pr-1.5 custom-scrollbar">
+                    {leaderboard.map((player, idx) => {
+                      const isMe = userProfile && userProfile.email.toLowerCase() === player.email.toLowerCase();
+                      const rankingBadges = ["🥇", "🥈", "🥉"];
+                      const isTopThree = idx < 3;
+
+                      return (
+                        <div
+                          key={player.email}
+                          className={`p-3.5 rounded-2xl border transition flex items-center justify-between gap-4 ${
+                            isMe
+                              ? "bg-[#bc6c25]/5 border-[#bc6c25] ring-2 ring-[#bc6c25]/10 shadow-sm"
+                              : "bg-[#fdfbf7] border-[#e9e2d7] hover:border-[#cad2c5]/60 hover:bg-white"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3.5">
+                            {/* Ranking Placement Badge */}
+                            <span className="w-8 font-display text-center font-black text-sm text-slate-500 flex items-center justify-center">
+                              {isTopThree ? rankingBadges[idx] : `#${idx + 1}`}
+                            </span>
+
+                            {player.avatar?.startsWith("http") ? (
+                              <img
+                                src={player.avatar}
+                                alt={player.username}
+                                referrerPolicy="no-referrer"
+                                className="w-10 h-10 rounded-full border border-[#e9e2d7] object-cover bg-white"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded-full bg-[#ece2d0]/50 border border-t-[#e9e2d7] flex items-center justify-center text-xl shadow-inner">
+                                {player.avatar || "👤"}
+                              </div>
+                            )}
+
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-sans font-black text-xs text-[#354f52]">
+                                  {player.username}
+                                </span>
+                                {isMe && (
+                                  <span className="text-[8px] font-black bg-[#bc6c25]/15 text-[#bc6c25] border border-[#bc6c25]/30 rounded-md px-1.5 py-0.5">
+                                    You (ඔබ)
+                                  </span>
+                                )}
+                              </div>
+                              
+                              {/* Sub progress counts badge tags */}
+                              <div className="flex items-center gap-1.5 mt-1 text-[8px] font-semibold text-slate-400">
+                                <span className="bg-slate-50 px-1 rounded-sm border border-slate-100">K: {player.kanjiProgress || 0}</span>
+                                <span className="bg-slate-50 px-1 rounded-sm border border-slate-100">V: {player.verbsProgress || 0}</span>
+                                <span className="bg-slate-50 px-1 rounded-sm border border-slate-100">A: {player.adjectivesProgress || 0}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Mastered Scores metrics counter */}
+                          <div className="text-right">
+                            <span className="text-xs font-black text-[#bc6c25] block">
+                              🏆 {player.totalProgress || 0}
+                            </span>
+                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                              mastered
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="p-12 text-center bg-[#fdfbf7] rounded-2xl border border-dashed border-[#e9e2d7]">
+                    <Users className="w-8 h-8 text-[#cad2c5] mx-auto mb-2" />
+                    <p className="text-xs font-bold text-[#84a98c]">ලීඩර්බෝඩ් එක තවමත් හිස්ව පවතී. Scoreboard as pristine as snow!</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">ප්‍රථමයෙන් ඔබේ ගිණුම සාදාගෙන ප්‍රගති දත්ත update කරන්න.</p>
+                  </div>
+                )}
+              </div>
+
+            </div>
+
           </div>
         )}
       </main>

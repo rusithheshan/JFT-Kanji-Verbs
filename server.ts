@@ -3,6 +3,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
+import fs from "fs";
 
 dotenv.config();
 
@@ -126,6 +127,81 @@ Ensure your output is a strictly formatted JSON array containing all processed e
     } catch (err: any) {
       console.error("PDF Parsing Error:", err);
       return res.status(500).json({ error: handleGeminiError(err) });
+    }
+  });
+
+  // Simple file-backed profiles storage for shared leaderboard
+  const PROFILES_FILE = path.join(process.cwd(), "profiles.json");
+
+  function getProfilesSafe(): any[] {
+    try {
+      if (fs.existsSync(PROFILES_FILE)) {
+        const raw = fs.readFileSync(PROFILES_FILE, "utf8");
+        return JSON.parse(raw) || [];
+      }
+    } catch (e) {
+      console.error("Error reading profiles.json:", e);
+    }
+    return [];
+  }
+
+  function saveProfilesSafe(profiles: any[]) {
+    try {
+      fs.writeFileSync(PROFILES_FILE, JSON.stringify(profiles, null, 2), "utf8");
+    } catch (e) {
+      console.error("Error writing profiles.json:", e);
+    }
+  }
+
+  // Get active shared leaderboard
+  app.get("/api/leaderboard", (req, res) => {
+    try {
+      const list = getProfilesSafe();
+      const sorted = [...list].sort((a, b) => b.totalProgress - a.totalProgress);
+      return res.json({ leaderboard: sorted });
+    } catch (err) {
+      return res.status(500).json({ error: "Failed to load leaderboard" });
+    }
+  });
+
+  // Sync profile data and study scores
+  app.post("/api/profile/sync", (req, res) => {
+    try {
+      const { email, username, avatar, kanjiProgress = 0, verbsProgress = 0, adjectivesProgress = 0, grammarProgress = 0 } = req.body;
+      if (!email || !username) {
+        return res.status(400).json({ error: "Missing required profile credentials (email, username)." });
+      }
+
+      const list = getProfilesSafe();
+      let matchedIdx = list.findIndex((u: any) => u.email.toLowerCase() === email.toLowerCase());
+
+      const totalProgress = Number(kanjiProgress) + Number(verbsProgress) + Number(adjectivesProgress) + Number(grammarProgress);
+      const now = new Date().toISOString();
+
+      const profileObj = {
+        email: email.toLowerCase(),
+        username: username,
+        avatar: avatar || "👤",
+        kanjiProgress: Number(kanjiProgress),
+        verbsProgress: Number(verbsProgress),
+        adjectivesProgress: Number(adjectivesProgress),
+        grammarProgress: Number(grammarProgress),
+        totalProgress: totalProgress,
+        updatedAt: now,
+        joinedAt: matchedIdx >= 0 ? list[matchedIdx].joinedAt : now
+      };
+
+      if (matchedIdx >= 0) {
+        list[matchedIdx] = profileObj;
+      } else {
+        list.push(profileObj);
+      }
+
+      saveProfilesSafe(list);
+      return res.json({ success: true, profile: profileObj });
+    } catch (err: any) {
+      console.error("Profile sync error:", err);
+      return res.status(500).json({ error: "Failed to sync profile" });
     }
   });
 
