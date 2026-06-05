@@ -193,57 +193,6 @@ Ensure your output is a strictly formatted JSON array containing all processed e
     }
   });
 
-  // Stream registrants list as an Excel-compatible CSV file (Only for Admin)
-  app.get("/api/admin/export-registrants", (req, res) => {
-    try {
-      const { code } = req.query;
-      if (code !== "admin123") {
-        return res.status(403).json({ error: "අනවසර පිවිසුමකි. (Unauthorized code)." });
-      }
-
-      const list = getProfilesSafe();
-
-      // Set content type and attachment headers
-      res.setHeader("Content-Type", "text/csv; charset=utf-8");
-      res.setHeader("Content-Disposition", "attachment; filename=JFT_Palace_Students_Report.csv");
-
-      // Write UTF-8 BOM so Excel opens Sinhalese Unicode correctly on local Windows systems
-      res.write("\uFEFF");
-
-      // Headers
-      res.write("Name (නම),Email (ඊමේල්),Phone Number (දුරකථනය),Target Exam (ඉලක්කගත විභාගය),Joined Date (ලියාපදිංචි දිනය),Total Score (මුළු ලකුණු),Kanji (කංජි),Verbs (ක්‍රියාපද),Adjectives (විශේෂණ),Grammar (ව්‍යාකරණ)\n");
-
-      const escapeCsv = (val: any) => {
-        if (val === null || val === undefined) return '';
-        const s = String(val);
-        if (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r")) {
-          return '"' + s.replace(/"/g, '""') + '"';
-        }
-        return s;
-      };
-
-      for (const u of list) {
-        res.write([
-          escapeCsv(u.username),
-          escapeCsv(u.email),
-          escapeCsv(u.phoneNumber || 'N/A'),
-          escapeCsv(u.targetExam || 'N/A'),
-          escapeCsv(u.joinedAt || u.updatedAt || ''),
-          escapeCsv(u.totalProgress || 0),
-          escapeCsv(u.kanjiProgress || 0),
-          escapeCsv(u.verbsProgress || 0),
-          escapeCsv(u.adjectivesProgress || 0),
-          escapeCsv(u.grammarProgress || 0)
-        ].join(",") + "\n");
-      }
-
-      res.end();
-    } catch (err) {
-      console.error("Export registrants CSV error:", err);
-      res.status(500).json({ error: "Excel අපනයනය අසාර්ථක විය. (Export failed)." });
-    }
-  });
-
   // Get profile data with full progress maps
   app.get("/api/profile/get", (req, res) => {
     try {
@@ -267,35 +216,27 @@ Ensure your output is a strictly formatted JSON array containing all processed e
     }
   });
 
-  // Register active new user with email, phone number, and password
-  app.post("/api/auth/register", (req, res) => {
+  // Simple, password-less entry: Get or Create a fresh new Profile using Name & Exam
+  app.post("/api/auth/enter", (req, res) => {
     try {
-      const { email, phoneNumber, password, username, avatar = "🦊", targetExam = "JFT-Basic" } = req.body;
-      if (!email || !phoneNumber || !password || !username) {
-        return res.status(400).json({ error: "කරුණාකර සියලුම තොරතුරු (නම, ඊමේල්, දුරකථන අංකය, මුරපදය) ඇතුළත් කරන්න. (Please provide Name, Email, Phone Number, and Password)." });
+      const { username, targetExam = "JFT-Basic", avatar = "🦊" } = req.body;
+      if (!username || !username.trim()) {
+        return res.status(400).json({ error: "කරුණාකර ඔබගේ නම ඇතුළත් කරන්න. (Please provide a name)." });
       }
 
-      const cleanEmail = email.trim().toLowerCase();
-      const cleanPhone = phoneNumber.trim();
-
+      const cleanName = username.trim();
+      // Generate a brand-new unique account signature timestamped email every time they sign in
+      // This ensures that any logout + login combo starts progress completely cleared from 0
+      // while preserving their previous scores in the leaderboard json dataset permanently.
+      const email = cleanName.toLowerCase().replace(/[^a-z0-9]/g, "_") + "_" + Date.now() + "@student.com";
       const list = getProfilesSafe();
-      
-      const emailExists = list.find((u: any) => u.email && u.email.toLowerCase() === cleanEmail);
-      if (emailExists) {
-        return res.status(400).json({ error: "මෙම ඊමේල් ලිපිනයෙන් දැනටමත් ගිණුමක් ලියාපදිංචි කර ඇත. (This email is already registered!)" });
-      }
-
-      const phoneExists = list.find((u: any) => u.phoneNumber && u.phoneNumber.trim() === cleanPhone);
-      if (phoneExists) {
-        return res.status(400).json({ error: "මෙම දුරකථන අංකයෙන් දැනටමත් ගිණුමක් ලියාපදිංචි කර ඇත. (This phone number is already registered!)" });
-      }
-
       const now = new Date().toISOString();
+
       const newProfile = {
-        email: cleanEmail,
-        phoneNumber: cleanPhone,
-        password: password,
-        username: username.trim(),
+        email: email,
+        phoneNumber: "",
+        password: "",
+        username: cleanName,
         avatar: avatar,
         targetExam: targetExam,
         kanjiProgress: 0,
@@ -318,99 +259,8 @@ Ensure your output is a strictly formatted JSON array containing all processed e
       delete (savedProfile as any).password;
       return res.json({ success: true, profile: savedProfile });
     } catch (err) {
-      console.error("Registration error:", err);
-      return res.status(500).json({ error: "ලියාපදිංචි වීමට නොහැකි විය. Server registration failed." });
-    }
-  });
-
-  // Simple, password-less entry fallback: Get or Create Profile using Name & Exam
-  app.post("/api/auth/enter", (req, res) => {
-    try {
-      const { username, targetExam = "OTHER", avatar = "🦊" } = req.body;
-      if (!username || !username.trim()) {
-        return res.status(400).json({ error: "කරුණාකර ඔබගේ නම ඇතුළත් කරන්න. (Please provide a name)." });
-      }
-
-      const cleanName = username.trim();
-      const email = cleanName.toLowerCase() + "@no-email.com";
-      const list = getProfilesSafe();
-      let matchedIdx = list.findIndex((u: any) => u.email.toLowerCase() === email.toLowerCase());
-
-      const now = new Date().toISOString();
-
-      if (matchedIdx >= 0) {
-        // Automatically log in to existing account. Update exam if changed
-        const matched = list[matchedIdx];
-        matched.targetExam = targetExam || matched.targetExam || "OTHER";
-        matched.username = cleanName; // preserve original casing
-        matched.updatedAt = now;
-        saveProfilesSafe(list);
-
-        const loggedProfile = { ...matched };
-        delete (loggedProfile as any).password;
-        return res.json({ success: true, profile: loggedProfile });
-      } else {
-        // Register a new profile under this name
-        const newProfile = {
-          email: email,
-          phoneNumber: "",
-          password: "",
-          username: cleanName,
-          avatar: avatar,
-          targetExam: targetExam,
-          kanjiProgress: 0,
-          verbsProgress: 0,
-          adjectivesProgress: 0,
-          grammarProgress: 0,
-          kanjiProgressMap: {},
-          verbsProgressMap: {},
-          adjectivesProgressMap: {},
-          grammarProgressMap: {},
-          totalProgress: 0,
-          updatedAt: now,
-          joinedAt: now
-        };
-
-        list.push(newProfile);
-        saveProfilesSafe(list);
-
-        const savedProfile = { ...newProfile };
-        delete (savedProfile as any).password;
-        return res.json({ success: true, profile: savedProfile });
-      }
-    } catch (err) {
       console.error("Auth enter error:", err);
       return res.status(500).json({ error: "ගිණුමට ඇතුල් වීමට නොහැකි විය. Server entry failure." });
-    }
-  });
-
-  // Login existing user using Email OR Phone Number + Password
-  app.post("/api/auth/login", (req, res) => {
-    try {
-      const { loginIdentifier, password } = req.body;
-      if (!loginIdentifier || !password) {
-        return res.status(400).json({ error: "කරුණාකර ඊමේල් ලිපිනය/දුරකථන අංකය සහ මුරපදය ඇතුළත් කරන්න. (Please provide email/phone and password)." });
-      }
-
-      const identifier = loginIdentifier.trim().toLowerCase();
-      const list = getProfilesSafe();
-      
-      const matched = list.find((u: any) => {
-        const emMatch = u.email && u.email.toLowerCase() === identifier;
-        const phMatch = u.phoneNumber && u.phoneNumber.trim() === loginIdentifier.trim();
-        return emMatch || phMatch;
-      });
-      
-      if (!matched || matched.password !== password) {
-        return res.status(401).json({ error: "ඇතුළත් කළ තොරතුරු හෝ මුරපදය වැරදියි! (Incorrect email/phone or password)." });
-      }
-
-      const loggedProfile = { ...matched };
-      delete (loggedProfile as any).password;
-      return res.json({ success: true, profile: loggedProfile });
-    } catch (err) {
-      console.error("Login error:", err);
-      return res.status(500).json({ error: "ඇතුල් වීමට නොහැකි විය. Server login failed." });
     }
   });
 
