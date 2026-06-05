@@ -1131,15 +1131,32 @@ export default function App() {
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ username, targetExam, avatar }),
                 });
-                const data = await res.json();
+                
+                let data;
+                try {
+                  data = await res.json();
+                } catch (e) {
+                  throw new Error("Offline or static hosting environment");
+                }
+
                 if (res.ok && data.success) {
                   setUserProfile(data.profile);
                   await loadProfileAndProgressFromServer(data.profile.email);
                 } else {
-                  setAuthError(data.error || "ඇතුල් වීමට නොහැකි විය. (Connection issue).");
+                  throw new Error(data.error || "Server error");
                 }
               } catch (err) {
-                setAuthError("Server sync issues. Please try again.");
+                // FALLBACK FOR OFFLINE / STATIC WEB HOSTING (e.g. Netlify)
+                console.warn("Backend server not available. Falling back to client-side localStorage profile session:", err);
+                const fallbackEmail = username.toLowerCase().replace(/[^a-z0-9]/g, "_") + "@no-email.com";
+                const fallbackProfile = {
+                  username,
+                  email: fallbackEmail,
+                  avatar: avatar || "🦊",
+                  targetExam: targetExam || "JFT-Basic",
+                  joinedAt: new Date().toISOString(),
+                };
+                setUserProfile(fallbackProfile);
               }
             }}
             className="space-y-4 pt-1"
