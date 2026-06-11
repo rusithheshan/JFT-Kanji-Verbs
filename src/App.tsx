@@ -32,7 +32,9 @@ import {
   Trophy,
   Download,
   Users,
-  Hash
+  Hash,
+  Volume2,
+  VolumeX
 } from "lucide-react";
 import { PRELOADED_KANJI, KanjiCard } from "./data/preloadedKanji";
 import { LearningStatus, UserProgress } from "./types";
@@ -532,6 +534,17 @@ export default function App() {
       const updated = { ...prev, [id]: status };
       return updated;
     });
+  };
+
+  const speakJapanese = (text: string) => {
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      const cleanText = text.split("(")[0].split("（")[0].trim();
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      utterance.lang = "ja-JP";
+      utterance.rate = 0.85;
+      window.speechSynthesis.speak(utterance);
+    }
   };
 
   const getQuestionWordHiraganaAndKanji = (c: CounterItem): { hiragana: string, kanji: string } => {
@@ -3106,13 +3119,30 @@ export default function App() {
                           >
                             {/* Card Top Title bar */}
                             <div className="p-4 bg-[#fcfaf5] border-b border-[#ece7dc]/80 flex justify-between items-center gap-2">
-                              <div>
-                                <h3 className="text-xs font-black text-[#354f52] tracking-wide">
-                                  {c.categorySinhala}
-                                </h3>
-                                <p className="text-[10px] text-slate-500 font-medium">
-                                  {c.categoryEnglish}
-                                </p>
+                              <div className="flex items-center gap-3">
+                                {/* Large speaker button to read the full card list */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const parts = [
+                                      c.questionWordJapanese,
+                                      ...Object.keys(c.numbers).map(Number).sort((a,b) => a-b).map(n => c.numbers[n].japanese)
+                                    ];
+                                    speakJapanese(parts.join("、 "));
+                                  }}
+                                  title="සම්පූර්ණ ලැයිස්තුවම පිළිවෙලින් ශ්‍රවණය කරන්න (Narrator speaks full list)"
+                                  className="p-2.5 bg-[#bc6c25]/10 hover:bg-[#bc6c25]/20 text-[#bc6c25] rounded-xl hover:scale-105 transition-all duration-150 active:scale-95 cursor-pointer flex items-center justify-center shrink-0 shadow-3xs"
+                                >
+                                  <Volume2 className="w-5 h-5 animate-pulse" />
+                                </button>
+                                <div>
+                                  <h3 className="text-xs font-black text-[#354f52] tracking-wide">
+                                    {c.categorySinhala}
+                                  </h3>
+                                  <p className="text-[10px] text-slate-500 font-medium">
+                                    {c.categoryEnglish}
+                                  </p>
+                                </div>
                               </div>
                               <div className="shrink-0 flex items-center gap-1.5">
                                 <span className="px-2.5 py-1 bg-[#52796f] text-white text-[11px] font-black rounded-lg">
@@ -3125,18 +3155,28 @@ export default function App() {
                             </div>
 
                             {/* Question Word details */}
-                            <div className="p-4 border-b border-[#fcfaf5] bg-[#faf8f2]/30">
-                              <span className="text-[9px] font-bold text-amber-600 uppercase tracking-wide block mb-0.5">
-                                ❓ Question word (ප්‍රශ්න පදය)
-                              </span>
-                              <div className="flex justify-between items-center gap-1">
-                                <span className="font-sans text-xs font-extrabold text-[#354f52]">
-                                  {c.questionWordJapanese} ({c.questionWordRomaji})
+                            <div className="p-4 border-b border-[#fcfaf5] bg-[#faf8f2]/30 flex justify-between items-center gap-3">
+                              <div className="space-y-0.5">
+                                <span className="text-[9px] font-bold text-amber-600 uppercase tracking-wide block mb-0.5">
+                                  ❓ Question word (ප්‍රශ්න පදය)
                                 </span>
-                                <span className="text-[10px] text-slate-600 font-bold">
-                                  {c.questionWordSinhala}
-                                </span>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-sans text-xs font-extrabold text-[#354f52]">
+                                    {c.questionWordJapanese} ({c.questionWordRomaji})
+                                  </span>
+                                  <span className="text-[10px] text-slate-600 font-bold">
+                                    {c.questionWordSinhala}
+                                  </span>
+                                </div>
                               </div>
+                              <button
+                                type="button"
+                                onClick={() => speakJapanese(c.questionWordJapanese)}
+                                title="ප්‍රශ්න පදය ශ්‍රවණය කරන්න (Listen"
+                                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition hover:scale-105 active:scale-95 cursor-pointer shrink-0"
+                              >
+                                <Volume2 className="w-3.5 h-3.5" />
+                              </button>
                             </div>
 
                             {/* Numbers items */}
@@ -3148,21 +3188,32 @@ export default function App() {
                                 {Object.keys(c.numbers).map(Number).map((num) => {
                                   const val = c.numbers[num];
                                   return (
-                                    <div key={num} className="grid grid-cols-12 gap-1.5 items-center text-[11px] border-b border-dashed border-[#ece7dc]/60 pb-1 text-left">
-                                      <span className="col-span-2 font-black text-[#84a98c]">
-                                        {num}:
-                                      </span>
-                                      <span className="col-span-4 font-black font-sans text-xs text-[#bc6c25] text-left">
-                                        {getKanjiForm(num, c.counterChar)}
-                                      </span>
-                                      <div className="col-span-6 text-left">
-                                        <span className="font-extrabold text-[#354f52] block leading-none">
-                                          {val.japanese}
+                                    <div key={num} className="flex items-center justify-between gap-2 text-[11px] border-b border-dashed border-[#ece7dc]/60 pb-1.5 pt-1">
+                                      <div className="grid grid-cols-12 gap-1.5 items-center flex-1">
+                                        <span className="col-span-2 font-black text-[#84a98c]">
+                                          {num}:
                                         </span>
-                                        <span className="font-mono text-[9px] text-slate-400 block mt-0.5">
-                                          {val.romaji}
+                                        <span className="col-span-4 font-black font-sans text-xs text-[#bc6c25] text-left">
+                                          {getKanjiForm(num, c.counterChar)}
                                         </span>
+                                        <div className="col-span-6 text-left">
+                                          <span className="font-extrabold text-[#354f52] block leading-none">
+                                            {val.japanese}
+                                          </span>
+                                          <span className="font-mono text-[9px] text-slate-400 block mt-0.5">
+                                            {val.romaji}
+                                          </span>
+                                        </div>
                                       </div>
+                                      
+                                      <button
+                                        type="button"
+                                        onClick={() => speakJapanese(val.japanese)}
+                                        title={`${num} සඳහා ශ්‍රවණය කරන්න (Click to pronounce)`}
+                                        className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-md transition cursor-pointer shrink-0"
+                                      >
+                                        <Volume2 className="w-3.5 h-3.5" />
+                                      </button>
                                     </div>
                                   );
                                 })}
@@ -3612,6 +3663,7 @@ export default function App() {
               adjectivesProgress={adjectivesProgress}
               grammarList={grammarList}
               grammarProgress={grammarProgress}
+              countersProgress={countersProgress}
               onClearProgress={(category) => {
                 if (category === "kanji" || category === "all") {
                   setProgress({});
@@ -3628,6 +3680,10 @@ export default function App() {
                 if (category === "grammar" || category === "all") {
                   setGrammarProgress({});
                   localStorage.removeItem("jft_grammar_progress");
+                }
+                if (category === "counters" || category === "all") {
+                  setCountersProgress({});
+                  localStorage.removeItem("jft_counters_progress");
                 }
               }}
             />

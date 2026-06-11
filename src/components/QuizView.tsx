@@ -656,82 +656,161 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
       return;
     }
 
-    // Shuffle pool
-    const shuffledPool = [...pool].sort(() => 0.5 - Math.random());
-    const selectedCount = Math.min(questionCount, shuffledPool.length);
-    const activeItems = shuffledPool.slice(0, selectedCount);
+    // Shuffle pool and construct active items
+    let activeItems: Array<KanjiCard | JFTVerb | JFTAdjective | CounterItem> = [];
+    if (isCountersMode) {
+      for (let i = 0; i < questionCount; i++) {
+        activeItems.push(preloadedCounters[i % preloadedCounters.length]);
+      }
+      activeItems = [...activeItems].sort(() => 0.5 - Math.random());
+    } else {
+      const shuffledPool = [...pool].sort(() => 0.5 - Math.random());
+      const selectedCount = Math.min(questionCount, shuffledPool.length);
+      activeItems = shuffledPool.slice(0, selectedCount);
+    }
 
     // Build questions
-    const generatedQuestions: QuizQuestion[] = activeItems.map((item) => {
+    const generatedQuestions: QuizQuestion[] = activeItems.map((item, index) => {
       let prompt = "";
       let correctAnswer = "";
-      let allPossibleAnswers: string[] = [];
+      let options: string[] = [];
 
       if (isCountersMode) {
-        // Counters mode
         const c = item as CounterItem;
         const availableKeys = Object.keys(c.numbers).map(Number);
         const randCount = availableKeys[Math.floor(Math.random() * availableKeys.length)] || 1;
         const itemVal = c.numbers[randCount] || c.numbers[1];
         const kanjiForm = getKanjiForm(randCount, c.counterChar);
-        
-        prompt = `ජපන් බසින් "${c.categorySinhala} ${randCount}ක්" සඳහා නිවැරදි පසු යෙදුම් පදය කුමක්ද?`;
-        correctAnswer = `${itemVal.japanese} (${kanjiForm}) (${itemVal.romaji})`;
-        
-        allPossibleAnswers = preloadedCounters.map((alternate) => {
-          const altKeys = Object.keys(alternate.numbers).map(Number);
-          const randAltNum = altKeys[Math.floor(Math.random() * altKeys.length)] || randCount;
-          const altVal = alternate.numbers[randAltNum] || alternate.numbers[randCount] || alternate.numbers[1];
-          return `${altVal.japanese} (${getKanjiForm(randAltNum, alternate.counterChar)}) (${altVal.romaji})`;
-        });
-      } else if (!isVerbsMode && !isAdjectivesMode) {
-        // Kanji mode
-        const kanjiCard = item as KanjiCard;
-        if (quizMode === "kanji_reading") {
-          prompt = kanjiCard.kanji;
-          correctAnswer = kanjiCard.furigana;
-          allPossibleAnswers = kanjiCards.map((c) => c.furigana);
+
+        // Sub question type: 0 = Sinhala count -> Japanese Counter, 1 = Japanese Counter -> Sinhala count, 2 = Character -> usage relation
+        const qSubMode = index % 3;
+
+        if (qSubMode === 0) {
+          prompt = `"${c.categorySinhala} ${randCount}ක්" සඳහා නිවැරදි ජපන් පසු යෙදුම් පදය (Counter Word) කුමක්ද?`;
+          correctAnswer = `${itemVal.japanese} (${kanjiForm}) (${itemVal.romaji})`;
+
+          // Distractor 1: same counter but different random number (if available)
+          const otherNums = availableKeys.filter(n => n !== randCount);
+          const altNum1 = otherNums.length > 0 ? otherNums[Math.floor(Math.random() * otherNums.length)] : randCount;
+          const altVal1 = c.numbers[altNum1] || itemVal;
+          const dist1 = `${altVal1.japanese} (${getKanjiForm(altNum1, c.counterChar)}) (${altVal1.romaji})`;
+
+          // Distractor 2: another counter category but same number
+          const remainingCounters = preloadedCounters.filter(alt => alt.id !== c.id);
+          const altCounter2 = remainingCounters[Math.floor(Math.random() * remainingCounters.length)] || c;
+          const altVal2 = altCounter2.numbers[randCount] || altCounter2.numbers[1];
+          const dist2 = `${altVal2.japanese} (${getKanjiForm(randCount, altCounter2.counterChar)}) (${altVal2.romaji})`;
+
+          // Distractor 3: another counter category with random number
+          const altCounter3 = remainingCounters.filter(alt => alt.id !== altCounter2.id)[Math.floor(Math.random() * (remainingCounters.length - 1))] || altCounter2;
+          const altKeys3 = Object.keys(altCounter3.numbers).map(Number);
+          const altNum3 = altKeys3[Math.floor(Math.random() * altKeys3.length)] || 1;
+          const altVal3 = altCounter3.numbers[altNum3] || altCounter3.numbers[1];
+          const dist3 = `${altVal3.japanese} (${getKanjiForm(altNum3, altCounter3.counterChar)}) (${altVal3.romaji})`;
+
+          const choicesSet = new Set<string>([correctAnswer, dist1, dist2, dist3]);
+          while (choicesSet.size < 4) {
+            const fallbackC = preloadedCounters[Math.floor(Math.random() * preloadedCounters.length)];
+            const fKeys = Object.keys(fallbackC.numbers).map(Number);
+            const fNum = fKeys[Math.floor(Math.random() * fKeys.length)] || 1;
+            const fVal = fallbackC.numbers[fNum] || fallbackC.numbers[1];
+            choicesSet.add(`${fVal.japanese} (${getKanjiForm(fNum, fallbackC.counterChar)}) (${fVal.romaji})`);
+          }
+          options = Array.from(choicesSet).sort(() => 0.5 - Math.random());
+
+        } else if (qSubMode === 1) {
+          prompt = `ජපන් බසින් "${itemVal.japanese} (${kanjiForm})" යන්නෙහි නිවැරදි සිංහල තේරුම කුමක්ද?`;
+          correctAnswer = `${c.categorySinhala} - ${randCount}ක්`;
+
+          // Distractor 1: same category, different number
+          const otherNums = availableKeys.filter(n => n !== randCount);
+          const altNum1 = otherNums.length > 0 ? otherNums[Math.floor(Math.random() * otherNums.length)] : randCount;
+          const dist1 = `${c.categorySinhala} - ${altNum1}ක්`;
+
+          // Distractor 2: other category, same number
+          const remainingCounters = preloadedCounters.filter(alt => alt.id !== c.id);
+          const altCounter2 = remainingCounters[Math.floor(Math.random() * remainingCounters.length)] || c;
+          const dist2 = `${altCounter2.categorySinhala} - ${randCount}ක්`;
+
+          // Distractor 3: other category, different number
+          const altCounter3 = remainingCounters.filter(alt => alt.id !== altCounter2.id)[Math.floor(Math.random() * (remainingCounters.length - 1))] || altCounter2;
+          const altKeys3 = Object.keys(altCounter3.numbers).map(Number);
+          const altNum3 = altKeys3[Math.floor(Math.random() * altKeys3.length)] || 1;
+          const dist3 = `${altCounter3.categorySinhala} - ${altNum3}ක්`;
+
+          const choicesSet = new Set<string>([correctAnswer, dist1, dist2, dist3]);
+          while (choicesSet.size < 4) {
+            const fallbackC = preloadedCounters[Math.floor(Math.random() * preloadedCounters.length)];
+            const fKeys = Object.keys(fallbackC.numbers).map(Number);
+            const fNum = fKeys[Math.floor(Math.random() * fKeys.length)] || 1;
+            choicesSet.add(`${fallbackC.categorySinhala} - ${fNum}ක්`);
+          }
+          options = Array.from(choicesSet).sort(() => 0.5 - Math.random());
+
         } else {
-          prompt = kanjiCard.furigana;
-          correctAnswer = kanjiCard.kanji;
-          allPossibleAnswers = kanjiCards.map((c) => c.kanji);
-        }
-      } else if (isVerbsMode) {
-        // Verbs mode
-        const jftVerb = item as JFTVerb;
-        if (quizMode === "sinhala_verb_japanese") {
-          prompt = jftVerb.sinhalaMeaning;
-          // Format with Kanji and furigana, e.g. "書く (かく)"
-          correctAnswer = `${jftVerb.kanji} (${jftVerb.furigana})`;
-          allPossibleAnswers = verbsList.map((v) => `${v.kanji} (${v.furigana})`);
-        } else {
-          prompt = `${jftVerb.kanji} (${jftVerb.furigana})`;
-          correctAnswer = jftVerb.sinhalaMeaning;
-          allPossibleAnswers = verbsList.map((v) => v.sinhalaMeaning);
+          prompt = `පහත සඳහන් ජපන් පසු යෙදුම (Counter Character) "${c.counterChar}" (${c.hiraganaChar}) භාවිතා කරන්නේ කුමක් සඳහාද?`;
+          correctAnswer = `${c.categorySinhala} (${c.categoryEnglish})`;
+
+          const remainingCounters = preloadedCounters.filter(alt => alt.id !== c.id);
+          const shuffledAlts = [...remainingCounters].sort(() => 0.5 - Math.random());
+          const dist1 = `${shuffledAlts[0].categorySinhala} (${shuffledAlts[0].categoryEnglish})`;
+          const dist2 = `${shuffledAlts[1].categorySinhala} (${shuffledAlts[1].categoryEnglish})`;
+          const dist3 = `${shuffledAlts[2].categorySinhala} (${shuffledAlts[2].categoryEnglish})`;
+
+          const choicesSet = new Set<string>([correctAnswer, dist1, dist2, dist3]);
+          while (choicesSet.size < 4) {
+            const fallbackC = preloadedCounters[Math.floor(Math.random() * preloadedCounters.length)];
+            choicesSet.add(`${fallbackC.categorySinhala} (${fallbackC.categoryEnglish})`);
+          }
+          options = Array.from(choicesSet).sort(() => 0.5 - Math.random());
         }
       } else {
-        // Adjectives mode
-        const jftAdj = item as JFTAdjective;
-        if (quizMode === "sinhala_adj_japanese") {
-          prompt = jftAdj.sinhalaMeaning;
-          correctAnswer = `${jftAdj.kanji} (${jftAdj.hiragana})`;
-          allPossibleAnswers = adjectivesList.map((a) => `${a.kanji} (${a.hiragana})`);
+        if (!isVerbsMode && !isAdjectivesMode) {
+          // Kanji mode
+          const kanjiCard = item as KanjiCard;
+          if (quizMode === "kanji_reading") {
+            prompt = kanjiCard.kanji;
+            correctAnswer = kanjiCard.furigana;
+            options = kanjiCards.map((c) => c.furigana);
+          } else {
+            prompt = kanjiCard.furigana;
+            correctAnswer = kanjiCard.kanji;
+            options = kanjiCards.map((c) => c.kanji);
+          }
+        } else if (isVerbsMode) {
+          // Verbs mode
+          const jftVerb = item as JFTVerb;
+          if (quizMode === "sinhala_verb_japanese") {
+            prompt = jftVerb.sinhalaMeaning;
+            correctAnswer = `${jftVerb.kanji} (${jftVerb.furigana})`;
+            options = verbsList.map((v) => `${v.kanji} (${v.furigana})`);
+          } else {
+            prompt = `${jftVerb.kanji} (${jftVerb.furigana})`;
+            correctAnswer = jftVerb.sinhalaMeaning;
+            options = verbsList.map((v) => v.sinhalaMeaning);
+          }
         } else {
-          prompt = `${jftAdj.kanji} (${jftAdj.hiragana})`;
-          correctAnswer = jftAdj.sinhalaMeaning;
-          allPossibleAnswers = adjectivesList.map((a) => a.sinhalaMeaning);
+          // Adjectives mode
+          const jftAdj = item as JFTAdjective;
+          if (quizMode === "sinhala_adj_japanese") {
+            prompt = jftAdj.sinhalaMeaning;
+            correctAnswer = `${jftAdj.kanji} (${jftAdj.hiragana})`;
+            options = adjectivesList.map((a) => `${a.kanji} (${a.hiragana})`);
+          } else {
+            prompt = `${jftAdj.kanji} (${jftAdj.hiragana})`;
+            correctAnswer = jftAdj.sinhalaMeaning;
+            options = adjectivesList.map((a) => a.sinhalaMeaning);
+          }
         }
+
+        // Generate options for traditional modes: 1 correct + 3 wrong
+        const otherAnswers = Array.from(new Set(options)).filter(
+          (ans) => ans !== correctAnswer
+        );
+        const shuffledOthers = [...otherAnswers].sort(() => 0.5 - Math.random());
+        const selectedOthers = shuffledOthers.slice(0, 3);
+        options = [...selectedOthers, correctAnswer].sort(() => 0.5 - Math.random());
       }
-
-      // Generate options: 1 correct + 3 wrong
-      const otherAnswers = Array.from(new Set(allPossibleAnswers)).filter(
-        (ans) => ans !== correctAnswer
-      );
-      const shuffledOthers = [...otherAnswers].sort(() => 0.5 - Math.random());
-      const selectedOthers = shuffledOthers.slice(0, 3);
-
-      // Final choices shuffled
-      const options = [...selectedOthers, correctAnswer].sort(() => 0.5 - Math.random());
 
       return {
         prompt,
@@ -1084,7 +1163,7 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
                       : quizMode === "sinhala_adj_japanese" || quizMode === "japanese_adj_sinhala"
                       ? adjectivesList.length
                       : quizMode === "counting_system"
-                      ? preloadedCounters.length
+                      ? 100
                       : kanjiCards.length;
                   if (num > maxAvailable) return null;
 

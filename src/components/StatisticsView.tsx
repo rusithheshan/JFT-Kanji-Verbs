@@ -33,6 +33,7 @@ import {
 import { KanjiCard, JFTGrammar, UserProgress } from "../types";
 import { JFTVerb } from "../data/preloadedVerbs";
 import { JFTAdjective } from "../data/preloadedAdjectives";
+import { preloadedCounters, CounterItem } from "../data/preloadedCounters";
 
 interface StatisticsViewProps {
   kanjiCards: KanjiCard[];
@@ -43,7 +44,8 @@ interface StatisticsViewProps {
   adjectivesProgress: UserProgress;
   grammarList: JFTGrammar[];
   grammarProgress: UserProgress;
-  onClearProgress?: (category: "kanji" | "verbs" | "adjectives" | "grammar" | "all") => void;
+  countersProgress: UserProgress;
+  onClearProgress?: (category: "kanji" | "verbs" | "adjectives" | "grammar" | "counters" | "all") => void;
 }
 
 export default function StatisticsView({
@@ -55,11 +57,12 @@ export default function StatisticsView({
   adjectivesProgress,
   grammarList,
   grammarProgress,
+  countersProgress,
   onClearProgress
 }: StatisticsViewProps) {
   // Safe Double confirmation layout state
   const [confirmState, setConfirmState] = useState<{
-    category: "kanji" | "verbs" | "adjectives" | "grammar" | "all" | null;
+    category: "kanji" | "verbs" | "adjectives" | "grammar" | "counters" | "all" | null;
     step: 0 | 1 | 2;
   }>({ category: null, step: 0 });
 
@@ -186,9 +189,20 @@ export default function StatisticsView({
     });
     const unstudiedGrammar = Math.max(0, totalGrammar - okGrammar - notYetGrammar);
 
+    // Counters
+    const totalCounters = preloadedCounters.length;
+    let okCounters = 0;
+    let notYetCounters = 0;
+    preloadedCounters.forEach(c => {
+      const p = countersProgress[c.id];
+      if (p === "OK") okCounters++;
+      else if (p === "NOT_YET") notYetCounters++;
+    });
+    const unstudiedCounters = Math.max(0, totalCounters - okCounters - notYetCounters);
+
     // Total masteries
-    const totalItems = totalKanji + totalVerbs + totalAdjectives + totalGrammar;
-    const totalOk = okKanji + okVerbs + okAdjectives + okGrammar;
+    const totalItems = totalKanji + totalVerbs + totalAdjectives + totalGrammar + totalCounters;
+    const totalOk = okKanji + okVerbs + okAdjectives + okGrammar + okCounters;
     const overallPercentage = totalItems > 0 ? Math.round((totalOk / totalItems) * 100) : 0;
 
     return {
@@ -196,6 +210,7 @@ export default function StatisticsView({
       verbs: { total: totalVerbs, ok: okVerbs, notYet: notYetVerbs, unstudied: unstudiedVerbs, pct: totalVerbs > 0 ? Math.round((okVerbs / totalVerbs) * 100) : 0 },
       adjectives: { total: totalAdjectives, ok: okAdjectives, notYet: notYetAdjectives, unstudied: unstudiedAdjectives, pct: totalAdjectives > 0 ? Math.round((okAdjectives / totalAdjectives) * 100) : 0 },
       grammar: { total: totalGrammar, ok: okGrammar, notYet: notYetGrammar, unstudied: unstudiedGrammar, pct: totalGrammar > 0 ? Math.round((okGrammar / totalGrammar) * 100) : 0 },
+      counters: { total: totalCounters, ok: okCounters, notYet: notYetCounters, unstudied: unstudiedCounters, pct: totalCounters > 0 ? Math.round((okCounters / totalCounters) * 100) : 0 },
       overall: { total: totalItems, ok: totalOk, pct: overallPercentage }
     };
   }, [
@@ -206,7 +221,8 @@ export default function StatisticsView({
     adjectivesList,
     adjectivesProgress,
     grammarList,
-    grammarProgress
+    grammarProgress,
+    countersProgress
   ]);
 
   // Mastered stack data
@@ -235,6 +251,12 @@ export default function StatisticsView({
         "Mastered (OK)": stats.grammar.ok,
         "Needs Practice (Not Yet)": stats.grammar.notYet,
         "Unstudied (නොඉගෙනගත්)": stats.grammar.unstudied
+      },
+      {
+        name: "Counters (ගණන් කිරීම්)",
+        "Mastered (OK)": stats.counters.ok,
+        "Needs Practice (Not Yet)": stats.counters.notYet,
+        "Unstudied (නොඉගෙනගත්)": stats.counters.unstudied
       }
     ];
   }, [stats]);
@@ -242,8 +264,8 @@ export default function StatisticsView({
   // Spaced Repetition System (SRS) interval & retention metrics
   const srsData = useMemo(() => {
     const okCount = stats.overall.ok;
-    const notYetCount = stats.kanji.notYet + stats.verbs.notYet + stats.adjectives.notYet + stats.grammar.notYet;
-    const unstudiedCount = stats.kanji.unstudied + stats.verbs.unstudied + stats.adjectives.unstudied + stats.grammar.unstudied;
+    const notYetCount = stats.kanji.notYet + stats.verbs.notYet + stats.adjectives.notYet + stats.grammar.notYet + stats.counters.notYet;
+    const unstudiedCount = stats.kanji.unstudied + stats.verbs.unstudied + stats.adjectives.unstudied + stats.grammar.unstudied + stats.counters.unstudied;
 
     // Distribute cards into intervals beautifully
     const due1Day = notYetCount;
@@ -657,7 +679,7 @@ export default function StatisticsView({
           📚 Visual Completions per Course Segment (අධ්‍යයන ප්‍රගති මීටර)
         </h3>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
           {renderMiniSpeedometer(
             "JFT Kanji අකුරු",
             stats.kanji.ok,
@@ -685,6 +707,13 @@ export default function StatisticsView({
             stats.grammar.total,
             "#52796f",
             <Calendar className="w-4 h-4 text-[#52796f]" />
+          )}
+          {renderMiniSpeedometer(
+            "Counters ගණන් කිරීම්",
+            stats.counters.ok,
+            stats.counters.total,
+            "#bc6c25",
+            <Award className="w-4 h-4 text-[#bc6c25]" />
           )}
         </div>
       </div>
@@ -951,7 +980,7 @@ export default function StatisticsView({
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
             <button
               type="button"
               onClick={() => setConfirmState({ category: "kanji", step: 1 })}
@@ -982,8 +1011,15 @@ export default function StatisticsView({
             </button>
             <button
               type="button"
+              onClick={() => setConfirmState({ category: "counters", step: 1 })}
+              className="py-3 px-4 bg-white hover:bg-amber-50/20 text-[#bc6c25] border border-[#bc6c25]/30 rounded-2xl text-[11px] font-black text-center transition cursor-pointer shadow-3xs"
+            >
+              🧹 Clear Counters Progress
+            </button>
+            <button
+              type="button"
               onClick={() => setConfirmState({ category: "all", step: 1 })}
-              className="py-3 px-4 col-span-2 md:col-span-1 bg-red-50 hover:bg-red-100/50 text-red-600 border border-red-200 rounded-2xl text-[11px] font-black text-center transition cursor-pointer shadow-3xs"
+              className="py-3 px-4 col-span-2 sm:col-span-3 lg:col-span-1 bg-red-50 hover:bg-red-100/50 text-red-600 border border-red-200 rounded-2xl text-[11px] font-black text-center transition cursor-pointer shadow-3xs"
             >
               🚨 Reset All Progress
             </button>
