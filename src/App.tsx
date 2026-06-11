@@ -31,7 +31,8 @@ import {
   Moon,
   Trophy,
   Download,
-  Users
+  Users,
+  Hash
 } from "lucide-react";
 import { PRELOADED_KANJI, KanjiCard } from "./data/preloadedKanji";
 import { LearningStatus, UserProgress } from "./types";
@@ -47,10 +48,11 @@ import GrammarCardView from "./components/GrammarCardView";
 import DictionaryView from "./components/DictionaryView";
 import StatisticsView from "./components/StatisticsView";
 import AlphabetView from "./components/AlphabetView";
+import { preloadedCounters, CounterItem } from "./data/preloadedCounters";
 
 export default function App() {
   // Navigation tabs
-  const [activeTab, setActiveTab] = useState<"alphabet" | "learn" | "test" | "verbs" | "adjectives" | "grammar" | "quiz" | "dictionary" | "stats">("alphabet");
+  const [activeTab, setActiveTab] = useState<"alphabet" | "learn" | "test" | "verbs" | "adjectives" | "grammar" | "quiz" | "dictionary" | "stats" | "counters">("alphabet");
 
   // Supporting unified nested Study vs Test mode for JFT Kanji (matching Verbs/Adjectives)
   const [kanjiViewMode, setKanjiViewMode] = useState<"learn" | "test">("learn");
@@ -260,6 +262,36 @@ export default function App() {
   const [activeAdjectiveTypeFilter, setActiveAdjectiveTypeFilter] = useState<"ALL" | "I" | "NA">("ALL");
   const [adjectivesPracticePerspective, setAdjectivesPracticePerspective] = useState<"sinhala" | "japanese">("japanese");
 
+  // JFT Counting Systems / Counters State
+  const [counters] = useState<CounterItem[]>(preloadedCounters);
+  const [countersProgress, setCountersProgress] = useState<UserProgress>(() => {
+    const saved = localStorage.getItem("jft_counters_progress");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return {};
+  });
+
+  const [countersViewMode, setCountersViewMode] = useState<"learn" | "test">("learn");
+  const [countersSearchQuery, setCountersSearchQuery] = useState("");
+  const [activeCountersFilter, setActiveCountersFilter] = useState<"ALL" | "NOT_YET" | "OK">("ALL");
+
+  // counters quiz session states
+  const [countersQuizOption, setCountersQuizOption] = useState<"sinhala" | "japanese" | "relationship">("sinhala");
+  const [countersQuizDeck, setCountersQuizDeck] = useState<ControlQuizQuestion[]>([]);
+  interface ControlQuizQuestion {
+    counterId: string;
+    description: string;
+    correctAnswer: string;
+    choices: string[];
+  }
+  const [currentCountersQuizIndex, setCurrentCountersQuizIndex] = useState(0);
+  const [selectedCountersChoice, setSelectedCountersChoice] = useState<string | null>(null);
+  const [hasSubmittedCountersQuiz, setHasSubmittedCountersQuiz] = useState(false);
+  const [countersQuizScore, setCountersQuizScore] = useState(0);
+
   // JFT Grammar State
   const [grammarList] = useState<JFTGrammar[]>(PRELOADED_GRAMMAR);
   const [grammarProgress, setGrammarProgress] = useState<UserProgress>(() => {
@@ -304,6 +336,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("jft_grammar_progress", JSON.stringify(grammarProgress));
   }, [grammarProgress]);
+
+  useEffect(() => {
+    localStorage.setItem("jft_counters_progress", JSON.stringify(countersProgress));
+  }, [countersProgress]);
 
   useEffect(() => {
     localStorage.setItem("jft_kanji_srs", JSON.stringify(srsRecords));
@@ -452,6 +488,121 @@ export default function App() {
     setIsAdjTestCardRevealed(false);
   };
 
+  const handleUpdateCounterStatus = (id: string, status: "OK" | "NOT_YET") => {
+    setCountersProgress((prev) => {
+      const updated = { ...prev, [id]: status };
+      return updated;
+    });
+  };
+
+  const handleStartCountersQuiz = (option = countersQuizOption) => {
+    const deck: ControlQuizQuestion[] = [];
+    
+    // For each of the 18 counters:
+    for (let i = 0; i < counters.length; i++) {
+      const c = counters[i];
+      // Pick a random count 1 to 10 or "question"
+      // Let's bias: 80% chance of 1-10 count, 20% chance of "question word"
+      const isQuestionWord = Math.random() < 0.2;
+      let randCount = 1;
+      if (isQuestionWord) {
+        randCount = 0; // represent questionWord
+      } else {
+        randCount = Math.floor(Math.random() * 10) + 1; // 1 to 10
+      }
+
+      let questionText = "";
+      let correctAns = "";
+      const allChoicesSet = new Set<string>();
+
+      if (option === "sinhala") {
+        // Sinhala Meaning Mode
+        if (randCount === 0) {
+          questionText = `"${c.questionWordJapanese}" යන්නෙහි නිවැරදි සිංහල තේරුම තෝරන්න.`;
+          correctAns = `${c.categorySinhala} (${c.questionWordSinhala})`;
+          allChoicesSet.add(correctAns);
+          // Distractors: other question words or counter names
+          while (allChoicesSet.size < 4) {
+            const alternate = counters[Math.floor(Math.random() * counters.length)];
+            allChoicesSet.add(`${alternate.categorySinhala} (${alternate.questionWordSinhala})`);
+          }
+        } else {
+          const itemVal = c.numbers[randCount] || c.numbers[1];
+          questionText = `ජපන් බසින් "${itemVal.japanese}" යන්නෙහි නිවැරදි සිංහල තේරුම කුමක්ද?`;
+          correctAns = `${c.categorySinhala} - ${randCount}ක්`;
+          allChoicesSet.add(correctAns);
+          while (allChoicesSet.size < 4) {
+            const alternate = counters[Math.floor(Math.random() * counters.length)];
+            allChoicesSet.add(`${alternate.categorySinhala} - ${randCount}ක්`);
+          }
+        }
+      } else if (option === "japanese") {
+        // Japanese Counter Word Mode
+        if (randCount === 0) {
+          questionText = `"${c.categorySinhala} (${c.categoryEnglish})" සඳහා කීයක්ද / කීදෙනෙක්ද කියා ඇසීමට යොදාගන්නා Question Word එක කුමක්ද?`;
+          correctAns = `${c.questionWordJapanese} (${c.questionWordRomaji})`;
+          allChoicesSet.add(correctAns);
+          while (allChoicesSet.size < 4) {
+            const alternate = counters[Math.floor(Math.random() * counters.length)];
+            allChoicesSet.add(`${alternate.questionWordJapanese} (${alternate.questionWordRomaji})`);
+          }
+        } else {
+          const itemVal = c.numbers[randCount] || c.numbers[1];
+          questionText = `"${c.categorySinhala} ${randCount}ක්" සඳහා නිවැරදි ජපන් පසු යෙදුම් පදය කුමක්ද?`;
+          correctAns = `${itemVal.japanese} (${itemVal.romaji})`;
+          allChoicesSet.add(correctAns);
+          while (allChoicesSet.size < 4) {
+            const alternate = counters[Math.floor(Math.random() * counters.length)];
+            const randAltNum = Math.floor(Math.random() * 10) + 1;
+            const altVal = alternate.numbers[randAltNum] || alternate.numbers[randCount] || alternate.numbers[1];
+            allChoicesSet.add(`${altVal.japanese} (${altVal.romaji})`);
+          }
+        }
+      } else {
+        // Relationship Mode
+        questionText = `පහත සඳහන් ජපන් පසු යෙදුම (Counter Character) "${c.counterChar}" (${c.hiraganaChar}) භාවිතා කරන්නේ කුමක් සඳහාද?`;
+        correctAns = `${c.categorySinhala} (${c.categoryEnglish})`;
+        allChoicesSet.add(correctAns);
+        while (allChoicesSet.size < 4) {
+          const alternate = counters[Math.floor(Math.random() * counters.length)];
+          allChoicesSet.add(`${alternate.categorySinhala} (${alternate.categoryEnglish})`);
+        }
+      }
+
+      const choicesArr = Array.from(allChoicesSet);
+      // Shuffle choices array using standard Fisher-Yates
+      for (let k = choicesArr.length - 1; k > 0; k--) {
+        const rIndex = Math.floor(Math.random() * (k + 1));
+        [choicesArr[k], choicesArr[rIndex]] = [choicesArr[rIndex], choicesArr[k]];
+      }
+
+      deck.push({
+        counterId: c.id,
+        description: questionText,
+        correctAnswer: correctAns,
+        choices: choicesArr
+      });
+    }
+
+    // Shuffle the entire deck of 18 questions so it's beautifully mixed
+    for (let k = deck.length - 1; k > 0; k--) {
+      const rIndex = Math.floor(Math.random() * (k + 1));
+      [deck[k], deck[rIndex]] = [deck[rIndex], deck[k]];
+    }
+
+    setCountersQuizDeck(deck);
+    setCurrentCountersQuizIndex(0);
+    setSelectedCountersChoice(null);
+    setHasSubmittedCountersQuiz(false);
+    setCountersQuizScore(0);
+  };
+
+  useEffect(() => {
+    if (activeTab === "counters" && countersViewMode === "test") {
+      handleStartCountersQuiz(countersQuizOption);
+    }
+  }, [activeTab, countersViewMode, countersQuizOption]);
+
   // SM-2 Spaced Repetition core updater
   const updateCardSRS = (cardId: string, gotCorrect: boolean) => {
     setSrsRecords((prev) => {
@@ -597,6 +748,10 @@ export default function App() {
             setGrammarProgress(prof.grammarProgressMap);
             localStorage.setItem("jft_grammar_progress", JSON.stringify(prof.grammarProgressMap));
           }
+          if (prof.countersProgressMap) {
+            setCountersProgress(prof.countersProgressMap);
+            localStorage.setItem("jft_counters_progress", JSON.stringify(prof.countersProgressMap));
+          }
           return prof;
         }
       }
@@ -612,7 +767,8 @@ export default function App() {
     kanjis = progress,
     vProgress = verbsProgress,
     aProgress = adjectivesProgress,
-    gProgress = grammarProgress
+    gProgress = grammarProgress,
+    cProgress = countersProgress
   ) => {
     if (!profile) return;
     try {
@@ -620,6 +776,7 @@ export default function App() {
       const vCount = Object.values(vProgress).filter((s) => s === "OK").length;
       const aCount = Object.values(aProgress).filter((s) => s === "OK").length;
       const gCount = Object.values(gProgress).filter((s) => s === "OK").length;
+      const cCount = Object.values(cProgress).filter((s) => s === "OK").length;
 
       await fetch("/api/profile/sync", {
         method: "POST",
@@ -632,10 +789,12 @@ export default function App() {
           verbsProgress: vCount,
           adjectivesProgress: aCount,
           grammarProgress: gCount,
+          countersProgress: cCount,
           kanjiProgressMap: kanjis,
           verbsProgressMap: vProgress,
           adjectivesProgressMap: aProgress,
           grammarProgressMap: gProgress,
+          countersProgressMap: cProgress
         }),
       });
       // Fetch latest leaderboard
@@ -689,7 +848,7 @@ export default function App() {
       }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [progress, verbsProgress, adjectivesProgress, grammarProgress]);
+  }, [progress, verbsProgress, adjectivesProgress, grammarProgress, countersProgress]);
 
   // Export full study records to a backup file
   const downloadProgressJSON = () => {
@@ -863,6 +1022,14 @@ export default function App() {
     if (window.confirm("සැබවින්ම ව්‍යාකරණ ප්‍රගති දත්ත මකාදමා නැවත මුල සිට ආරම්භ කිරීමට අවශ්‍ය ද? Reset grammar learning progress data?")) {
       setGrammarProgress({});
       localStorage.removeItem("jft_grammar_progress");
+    }
+  };
+
+  // Reset counters learning progress
+  const handleResetCountersProgress = () => {
+    if (window.confirm("සැබවින්ම ගණන් කිරීමේ පසු යෙදුම් ප්‍රගති දත්ත මකාදමා නැවත මුල සිට ආරම්භ කිරීමට අවශ්‍ය ද? Reset counting systems learning progress data?")) {
+      setCountersProgress({});
+      localStorage.removeItem("jft_counters_progress");
     }
   };
 
@@ -1097,6 +1264,35 @@ export default function App() {
     });
   }, [grammarList, grammarProgress, activeGrammarFilter, grammarSearchQuery]);
 
+  // Counters scores/ratios and filtering (optimized via useMemo)
+  const { okCountersCount, notYetCountersCount, percentCountersComplete } = useMemo(() => {
+    const ok = counters.reduce((sum, c) => (countersProgress[c.id] === "OK" ? sum + 1 : sum), 0);
+    const notYet = counters.reduce((sum, c) => (countersProgress[c.id] === "NOT_YET" ? sum + 1 : sum), 0);
+    const percent = counters.length > 0 ? Math.round((ok / counters.length) * 100) : 0;
+    return { okCountersCount: ok, notYetCountersCount: notYet, percentCountersComplete: percent };
+  }, [counters, countersProgress]);
+
+  const filteredCounters = useMemo(() => {
+    return counters.filter((c) => {
+      const cardStatus = countersProgress[c.id] || "UNSTUDIED";
+      const matchesStatus =
+        activeCountersFilter === "ALL" ||
+        (activeCountersFilter === "NOT_YET" && cardStatus === "NOT_YET") ||
+        (activeCountersFilter === "OK" && cardStatus === "OK");
+
+      const query = countersSearchQuery.toLowerCase().trim();
+      const matchesSearch =
+        !query ||
+        c.categorySinhala.toLowerCase().includes(query) ||
+        c.categoryEnglish.toLowerCase().includes(query) ||
+        c.questionWordJapanese.toLowerCase().includes(query) ||
+        c.questionWordRomaji.toLowerCase().includes(query) ||
+        c.counterChar.toLowerCase().includes(query);
+
+      return matchesStatus && matchesSearch;
+    });
+  }, [counters, countersProgress, activeCountersFilter, countersSearchQuery]);
+
   if (!userProfile) {
     const handleSimpleEnterSubmit = async (e: FormEvent<HTMLFormElement>) => {
       e.preventDefault();
@@ -1126,10 +1322,12 @@ export default function App() {
           setVerbsProgress({});
           setAdjectivesProgress({});
           setGrammarProgress({});
+          setCountersProgress({});
           localStorage.removeItem("jft_kanji_progress");
           localStorage.removeItem("jft_verbs_progress");
           localStorage.removeItem("jft_adjectives_progress");
           localStorage.removeItem("jft_grammar_progress");
+          localStorage.removeItem("jft_counters_progress");
 
           setUserProfile(data.profile);
           await loadProfileAndProgressFromServer(data.profile.email);
@@ -1500,6 +1698,22 @@ export default function App() {
                 }`}
               >
                 <Languages className={`w-4 h-4 ${activeTab === "adjectives" ? "text-white" : "text-teal-600"}`} /> Adjectives
+              </button>
+
+              {/* Tab 5.5: Counting Systems (ගණන් කිරීමේ පසු යෙදුම්) */}
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab("counters");
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`px-3 py-3 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
+                  activeTab === "counters"
+                    ? "bg-[#52796f] text-white shadow-md border-0 ring-4 ring-[#52796f]/15"
+                    : "text-[#354f52] hover:bg-white hover:text-[#bc6c25] border border-[#e9e2d7]/50"
+                }`}
+              >
+                <Hash className={`w-4 h-4 ${activeTab === "counters" ? "text-white animate-pulse" : "text-[#bc6c25]"}`} /> Counters
               </button>
 
               {/* Tab 6: Grammar (ව්‍යාකරණ) */}
@@ -2659,6 +2873,425 @@ export default function App() {
       </div>
     </div>)}
 
+        {/* TAB 4.5: COUNTING SYSTEMS (ගණන් කිරීමේ පසු යෙදුම්) */}
+        {activeTab === "counters" && (
+          <div className="space-y-6" id="tab-panel-counters">
+            <div className="space-y-6">
+              {/* Elegant Study vs Test Mode Switcher */}
+              <div className="flex gap-1.5 bg-[#f0ede6] p-1.5 rounded-2xl border border-[#e9e2d7] max-w-md mx-auto">
+                <button
+                  type="button"
+                  onClick={() => setCountersViewMode("learn")}
+                  className={`flex-1 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer text-center ${
+                    countersViewMode === "learn"
+                      ? "bg-[#52796f] text-white shadow-md font-black"
+                      : "text-[#354f52] hover:bg-white"
+                  }`}
+                >
+                  📖 Study Mode (ගණන් කිරීමේ පසු යෙදුම්)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCountersViewMode("test")}
+                  className={`flex-1 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer text-center ${
+                    countersViewMode === "test"
+                      ? "bg-[#52796f] text-white shadow-md font-black"
+                      : "text-[#354f52] hover:bg-white"
+                  }`}
+                >
+                  📝 Counting System Test
+                </button>
+              </div>
+
+              {countersViewMode === "learn" ? (
+                <div className="space-y-6">
+                  {/* Stats Metrics row */}
+                  <div className="bg-[#fcfaf5] border border-[#e9dfcc] rounded-2xl p-4 shadow-3xs flex flex-wrap gap-4 items-center justify-between">
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-black text-[#354f52]">ගණන් කිරීමේ පසු යෙදුම් 18 (Japanese Counting Systems)</h4>
+                      <p className="text-xs text-slate-500 font-medium">ජපන් භාෂාවේ විවිධ ද්‍රව්‍ය, සතුන්, පුද්ගලයන් සහ ක්‍රියාවන් ගණන් කිරීමේදී භාවිතා වන පසු යෙදුම් 18ක් මෙහි අන්තර්ගත වේ.</p>
+                    </div>
+                    <div className="flex gap-4 items-center bg-white p-3 rounded-xl border border-[#ece7dc]/80">
+                      <div className="text-center px-4">
+                        <span className="text-[9px] uppercase font-bold text-[#84a98c] block">Progress</span>
+                        <span className="text-lg font-black text-[#52796f]">{percentCountersComplete}%</span>
+                      </div>
+                      <div className="h-8 w-px bg-[#ece7dc]" />
+                      <div className="text-center px-4">
+                        <span className="text-[9px] uppercase font-bold text-[#84a98c] block">Mastered (OK)</span>
+                        <span className="text-lg font-black text-green-600">{okCountersCount} / 18</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Search and Filters */}
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="relative flex-1">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                        <Search className="w-4 h-4" />
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Search counters by Sinhala, English, reading, counter sign..."
+                        value={countersSearchQuery}
+                        onChange={(e) => setCountersSearchQuery(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#ece7dc] rounded-xl text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-[#84a98c]"
+                      />
+                    </div>
+                    <div className="flex gap-1 bg-[#f0ede6] p-1 rounded-xl border border-[#e9e2d7]">
+                      <button
+                        type="button"
+                        onClick={() => setActiveCountersFilter("ALL")}
+                        className={`px-3.5 py-1.5 rounded-lg text-[10px] font-bold cursor-pointer transition ${
+                          activeCountersFilter === "ALL" ? "bg-white text-[#2f3e46] shadow-3xs" : "text-[#52796f] hover:text-[#2f3e46]"
+                        }`}
+                      >
+                        All ({counters.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveCountersFilter("NOT_YET")}
+                        className={`px-3.5 py-1.5 rounded-lg text-[10px] font-bold cursor-pointer transition ${
+                          activeCountersFilter === "NOT_YET" ? "bg-red-50 text-red-600 shadow-3xs" : "text-slate-500 hover:text-slate-800"
+                        }`}
+                      >
+                        Not Yet ({notYetCountersCount})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveCountersFilter("OK")}
+                        className={`px-3.5 py-1.5 rounded-lg text-[10px] font-bold cursor-pointer transition ${
+                          activeCountersFilter === "OK" ? "bg-green-50 text-green-600 shadow-3xs" : "text-slate-500 hover:text-slate-800"
+                        }`}
+                      >
+                        Ok ({okCountersCount})
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Counters Cards Grid */}
+                  {filteredCounters.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {filteredCounters.map((c) => {
+                        const status = countersProgress[c.id] || "UNSTUDIED";
+                        return (
+                          <div
+                            key={c.id}
+                            className={`bg-white rounded-2xl border transition duration-200 hover:-translate-y-0.5 hover:shadow-xs overflow-hidden flex flex-col justify-between ${
+                              status === "OK"
+                                ? "border-green-300 shadow-3xs"
+                                : status === "NOT_YET"
+                                ? "border-red-300 shadow-3xs"
+                                : "border-[#ece7dc]"
+                            }`}
+                          >
+                            {/* Card Top Title bar */}
+                            <div className="p-4 bg-[#fcfaf5] border-b border-[#ece7dc]/80 flex justify-between items-center gap-2">
+                              <div>
+                                <h3 className="text-xs font-black text-[#354f52] tracking-wide">
+                                  {c.categorySinhala}
+                                </h3>
+                                <p className="text-[10px] text-slate-500 font-medium">
+                                  {c.categoryEnglish}
+                                </p>
+                              </div>
+                              <div className="shrink-0 flex items-center gap-1.5">
+                                <span className="px-2.5 py-1 bg-[#52796f] text-white text-[11px] font-black rounded-lg">
+                                  {c.counterChar}
+                                </span>
+                                <span className="px-1.5 py-0.5 bg-[#eae2d0] text-[#354f52] font-mono text-[9px] font-bold rounded-md">
+                                  {c.hiraganaChar}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Question Word details */}
+                            <div className="p-4 border-b border-[#fcfaf5] bg-[#faf8f2]/30">
+                              <span className="text-[9px] font-bold text-amber-600 uppercase tracking-wide block mb-0.5">
+                                ❓ Question word (ප්‍රශ්න පදය)
+                              </span>
+                              <div className="flex justify-between items-center gap-1">
+                                <span className="font-sans text-xs font-extrabold text-[#354f52]">
+                                  {c.questionWordJapanese} ({c.questionWordRomaji})
+                                </span>
+                                <span className="text-[10px] text-slate-600 font-bold">
+                                  {c.questionWordSinhala}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Numbers 1-10 items */}
+                            <div className="p-4 space-y-2">
+                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide block">
+                                🔢 Counters 1 - 10 (ගණන් කිරීම්)
+                              </span>
+                              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                                {Object.keys(c.numbers).map((numKey) => {
+                                  const num = Number(numKey);
+                                  const val = c.numbers[num];
+                                  return (
+                                    <div key={num} className="flex justify-between items-center text-[11px] border-b border-dashed border-[#ece7dc]/60 pb-1">
+                                      <span className="font-black text-[#52796f] mr-1">
+                                        {num}:
+                                      </span>
+                                      <div className="text-right">
+                                        <span className="font-extrabold text-[#354f52] block leading-none">
+                                          {val.japanese}
+                                        </span>
+                                        <span className="font-mono text-[9px] text-slate-400 block mt-0.5">
+                                          {val.romaji}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Action Indicators */}
+                            <div className="px-4 py-3 bg-[#fcfaf5]/70 border-t border-[#ece7dc]/60 flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateCounterStatus(c.id, "NOT_YET")}
+                                className={`flex-1 py-1.5 rounded-xl text-[10px] font-black cursor-pointer transition flex items-center justify-center gap-1 border ${
+                                  status === "NOT_YET"
+                                    ? "bg-red-50 text-red-600 border-red-200"
+                                    : "bg-white text-slate-500 border-slate-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200"
+                                }`}
+                              >
+                                ❌ Not Yet
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateCounterStatus(c.id, "OK")}
+                                className={`flex-1 py-1.5 rounded-xl text-[10px] font-black cursor-pointer transition flex items-center justify-center gap-1 border ${
+                                  status === "OK"
+                                    ? "bg-green-50 text-green-600 border-green-200"
+                                    : "bg-white text-slate-500 border-slate-200 hover:bg-green-50 hover:text-green-600 hover:border-green-200"
+                                }`}
+                              >
+                                ✔️ Ok
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-16 text-center bg-white rounded-2xl border border-[#ece7dc]">
+                      <p className="text-sm font-semibold text-slate-400">කිසිදු ගණන් කිරීමේ පසු යෙදුමක් හමුනොවීය. (No matching counters found.)</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* test view */
+                <div className="space-y-6 max-w-2xl mx-auto">
+                  {/* Select Options Panel */}
+                  <div className="bg-[#fcfaf5] border border-[#e9dfcc] rounded-2xl p-4 shadow-3xs space-y-4">
+                    <div className="text-center space-y-1">
+                      <h4 className="text-sm font-black text-[#354f52]">Counting System Test (ගණන් කිරීමේ පසු යෙදුම් පරීක්ෂණය)</h4>
+                      <p className="text-[11px] text-slate-500 font-medium">පහතින් ඔබට අවශ්‍ය පරීක්ෂණ ක්‍රමය තෝරාගෙන ප්‍රශ්න 18කට පිළිතුරු සපයන්න.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCountersQuizOption("sinhala");
+                          handleStartCountersQuiz("sinhala");
+                        }}
+                        className={`p-3 rounded-xl border text-center transition cursor-pointer ${
+                          countersQuizOption === "sinhala"
+                            ? "bg-[#52796f] border-0 text-white font-black shadow-3xs"
+                            : "bg-white border-[#ece7dc] text-[#354f52] hover:bg-slate-50 hover:border-slate-300 font-bold text-xs"
+                        }`}
+                      >
+                        <span className="block text-xs">සිංහල තේරුම තෝරන්න</span>
+                        <span className="block text-[9px] opacity-75 mt-0.5">Sinhala Meaning Quiz</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCountersQuizOption("japanese");
+                          handleStartCountersQuiz("japanese");
+                        }}
+                        className={`p-3 rounded-xl border text-center transition cursor-pointer ${
+                          countersQuizOption === "japanese"
+                            ? "bg-[#52796f] border-0 text-white font-black shadow-3xs"
+                            : "bg-white border-[#ece7dc] text-[#354f52] hover:bg-slate-50 hover:border-slate-300 font-bold text-xs"
+                        }`}
+                      >
+                        <span className="block text-xs">ජපන් පදය තෝරන්න</span>
+                        <span className="block text-[9px] opacity-75 mt-0.5">Japanese Reading Quiz</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCountersQuizOption("relationship");
+                          handleStartCountersQuiz("relationship");
+                        }}
+                        className={`p-3 rounded-xl border text-center transition cursor-pointer ${
+                          countersQuizOption === "relationship"
+                            ? "bg-[#52796f] border-0 text-white font-black shadow-3xs"
+                            : "bg-white border-[#ece7dc] text-[#354f52] hover:bg-slate-50 hover:border-slate-300 font-bold text-xs"
+                        }`}
+                      >
+                        <span className="block text-xs">පසුයෙදුම් සම්බන්ධතාවය</span>
+                        <span className="block text-[9px] opacity-75 mt-0.5">Counter Context Quiz</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {countersQuizDeck.length > 0 && currentCountersQuizIndex < countersQuizDeck.length ? (
+                    <div className="bg-white rounded-2xl border border-[#ece7dc] p-6 shadow-3xs space-y-6">
+                      {/* Queue position index */}
+                      <div className="flex justify-between items-center text-xs pb-3 border-b border-[#fcfaf5]">
+                        <span className="text-[#84a98c] font-bold">
+                          QUESTION <span className="font-mono bg-[#f0ede6] px-2 py-0.5 rounded text-[#2f3e46] font-black">{currentCountersQuizIndex + 1}</span> / {countersQuizDeck.length}
+                        </span>
+                        <span className="font-extrabold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-lg">
+                          Score: {countersQuizScore} / {currentCountersQuizIndex}
+                        </span>
+                      </div>
+
+                      {/* Question Description */}
+                      <div className="p-4 bg-[#fcfaf5] rounded-xl border border-[#e9dfcc] text-center space-y-2">
+                        <span className="text-[10px] font-black text-[#52796f] uppercase tracking-wider block">Question (ප්‍රශ්නය)</span>
+                        <h3 className="text-base font-black text-[#2f3e46] leading-relaxed">
+                          {countersQuizDeck[currentCountersQuizIndex].description}
+                        </h3>
+                      </div>
+
+                      {/* Four choices options list */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                        {countersQuizDeck[currentCountersQuizIndex].choices.map((choice) => {
+                          const isCorrectChoice = choice === countersQuizDeck[currentCountersQuizIndex].correctAnswer;
+                          const isSelectedChoice = choice === selectedCountersChoice;
+                          let btnStyle = "bg-white border-[#ece7dc] text-[#354f52] hover:bg-slate-50 hover:border-slate-400";
+                          
+                          if (hasSubmittedCountersQuiz) {
+                            if (isCorrectChoice) {
+                              btnStyle = "bg-green-100 border-green-400 text-green-900 font-extrabold";
+                            } else if (isSelectedChoice) {
+                              btnStyle = "bg-red-100 border-red-400 text-red-900 font-extrabold";
+                            } else {
+                              btnStyle = "bg-white border-[#f0ede6] text-slate-300 pointer-events-none";
+                            }
+                          } else if (isSelectedChoice) {
+                            btnStyle = "bg-[#fcfaf5] border-[#bc6c25] text-[#bc6c25] font-extrabold ring-2 ring-[#bc6c25]/10";
+                          }
+
+                          return (
+                            <button
+                              key={choice}
+                              type="button"
+                              disabled={hasSubmittedCountersQuiz}
+                              onClick={() => setSelectedCountersChoice(choice)}
+                              className={`p-4 rounded-xl border text-left text-xs font-bold transition duration-150 cursor-pointer flex justify-between items-center ${btnStyle}`}
+                            >
+                              <span>{choice}</span>
+                              {hasSubmittedCountersQuiz && isCorrectChoice && (
+                                <span className="text-green-600 text-lg font-black">✔️</span>
+                              )}
+                              {hasSubmittedCountersQuiz && isSelectedChoice && !isCorrectChoice && (
+                                <span className="text-red-600 text-lg font-black">❌</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Feedback banner */}
+                      {hasSubmittedCountersQuiz && (
+                        <div className={`p-4 rounded-xl text-center font-bold text-xs ${
+                          selectedCountersChoice === countersQuizDeck[currentCountersQuizIndex].correctAnswer
+                            ? "bg-green-50 border border-green-200 text-green-800"
+                            : "bg-red-50 border border-red-200 text-red-800"
+                        }`}>
+                          {selectedCountersChoice === countersQuizDeck[currentCountersQuizIndex].correctAnswer ? (
+                            <p>☀️ නිවැරදියි! (Correct!) - ඔබට ලකුණු +1 ක් හිමිවිය.</p>
+                          ) : (
+                            <p>❌ වැරදියි! (Incorrect) - නිවැරදි පිළිතුර: {countersQuizDeck[currentCountersQuizIndex].correctAnswer}</p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Control Button bar */}
+                      <div className="flex gap-3 justify-end pt-3 border-t border-[#ece7dc]/60">
+                        {!hasSubmittedCountersQuiz ? (
+                          <button
+                            type="button"
+                            disabled={!selectedCountersChoice}
+                            onClick={() => {
+                              if (!selectedCountersChoice) return;
+                              setHasSubmittedCountersQuiz(true);
+                              const isCorrect = selectedCountersChoice === countersQuizDeck[currentCountersQuizIndex].correctAnswer;
+                              if (isCorrect) {
+                                setCountersQuizScore((prev) => prev + 1);
+                                handleUpdateCounterStatus(countersQuizDeck[currentCountersQuizIndex].counterId, "OK");
+                              } else {
+                                handleUpdateCounterStatus(countersQuizDeck[currentCountersQuizIndex].counterId, "NOT_YET");
+                              }
+                            }}
+                            className={`py-3 px-6 rounded-xl text-xs font-black transition shadow-xs cursor-pointer ${
+                              selectedCountersChoice
+                                ? "bg-[#bc6c25] hover:bg-[#833e00] text-white"
+                                : "bg-slate-100 text-slate-400 border border-slate-200 pointer-events-none"
+                            }`}
+                          >
+                            ✔️ Submit Answer
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCurrentCountersQuizIndex((prev) => prev + 1);
+                              setSelectedCountersChoice(null);
+                              setHasSubmittedCountersQuiz(false);
+                            }}
+                            className="py-3 px-6 bg-[#52796f] hover:bg-[#354f52] text-white rounded-xl text-xs font-black transition shadow-xs cursor-pointer"
+                          >
+                            Next Question ➡️
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    /* Finished results */
+                    <div className="bg-white rounded-2xl border border-[#ece7dc] p-8 shadow-xs text-center space-y-6">
+                      <div className="space-y-2">
+                        <span className="text-3xl">🏆</span>
+                        <h3 className="text-lg font-black text-[#354f52]">Counting Quiz Completed!</h3>
+                        <p className="text-xs text-slate-500">පරීක්ෂණය සාර්ථකව අවසන් කරන ලදී.</p>
+                      </div>
+
+                      <div className="p-6 bg-[#fcfaf5] rounded-2xl border border-[#e9dfcc] max-w-sm mx-auto space-y-1">
+                        <span className="text-[10px] font-black text-[#52796f] uppercase block">Total Score (මුළු ලකුණු)</span>
+                        <p className="text-4xl font-black font-display text-[#bc6c25]">
+                          {countersQuizScore} <span className="text-sm font-medium text-slate-400">/ 18</span>
+                        </p>
+                        <p className="text-xs font-bold text-slate-500 pt-2">
+                          {countersQuizScore >= 15 ? "☀️ විශිෂ්ටයි! (Excellent!)" : countersQuizScore >= 10 ? "✨ හොඳයි! (Good Job!)" : "📚 තවදුරටත් අධ්‍යයනය කරන්න (Keep Practicing!)"}
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleStartCountersQuiz(countersQuizOption)}
+                        className="py-3 px-8 bg-[#52796f] hover:bg-[#354f52] text-white rounded-xl text-xs font-black transition shadow-md cursor-pointer inline-flex items-center gap-1.5"
+                      >
+                        🔄 Restart Practice Test
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* TAB 4: STUDY GRAMMAR PATTERNS */}
         {activeTab === "grammar" && (
           <div className="space-y-6" id="tab-panel-grammar">
@@ -3101,14 +3734,10 @@ export default function App() {
                             <span className="text-sm font-black text-[#52796f]">{okAdjectivesCount} <span className="text-[10px] font-medium text-slate-400">/ {adjectives.length}</span></span>
                           </div>
                           <div className="p-3 bg-[#fdfbf7] rounded-xl border border-[#e9e2d7] text-center shadow-3xs">
-                            <span className="text-[9px] font-bold text-[#84a98c] block uppercase">Verbs</span>
-                            <span className="text-sm font-black text-[#52796f]">{okVerbsCount} <span className="text-[10px] font-medium text-slate-400">/ {verbs.length}</span></span>
+                            <span className="text-[9px] font-bold text-[#84a98c] block uppercase">Counters</span>
+                            <span className="text-sm font-black text-[#52796f]">{okCountersCount} <span className="text-[10px] font-medium text-slate-400">/ {counters.length}</span></span>
                           </div>
-                          <div className="p-3 bg-[#fdfbf7] rounded-xl border border-[#e9e2d7] text-center shadow-3xs">
-                            <span className="text-[9px] font-bold text-[#84a98c] block uppercase">Adjectives</span>
-                            <span className="text-sm font-black text-[#52796f]">{okAdjectivesCount} <span className="text-[10px] font-medium text-slate-400">/ {adjectives.length}</span></span>
-                          </div>
-                          <div className="p-3 bg-[#fdfbf7] rounded-xl border border-[#e9e2d7] text-center shadow-3xs">
+                          <div className="p-3 bg-[#fdfbf7] rounded-xl border border-[#e9e2d7] text-center shadow-3xs col-span-2">
                             <span className="text-[9px] font-bold text-[#84a98c] block uppercase">Grammar</span>
                             <span className="text-sm font-black text-[#52796f]">{okGrammarCount} <span className="text-[10px] font-medium text-slate-400">/ {grammarList.length}</span></span>
                           </div>
@@ -3118,7 +3747,7 @@ export default function App() {
                         <div className="bg-[#ece2d0]/20 border border-[#e9e2d7] rounded-xl p-3.5 text-center shadow-3xs">
                           <span className="text-[10px] font-black text-[#bc6c25] uppercase tracking-wider">🏆 COMPILATION SCORE (SCOREBOARD SCORE)</span>
                           <p className="text-3xl font-display font-black text-[#354f52] mt-1">
-                            {okCount + okVerbsCount + okAdjectivesCount + okGrammarCount}
+                            {okCount + okVerbsCount + okAdjectivesCount + okGrammarCount + okCountersCount}
                           </p>
                           <p className="text-[9px] font-bold text-[#84a98c] mt-0.5">Sum of all cards mastered with status "OK"</p>
                         </div>
@@ -3134,12 +3763,14 @@ export default function App() {
                               setVerbsProgress({});
                               setAdjectivesProgress({});
                               setGrammarProgress({});
+                              setCountersProgress({});
                               
                               localStorage.removeItem("jft_user_profile");
                               localStorage.removeItem("jft_kanji_progress");
                               localStorage.removeItem("jft_verbs_progress");
                               localStorage.removeItem("jft_adjectives_progress");
                               localStorage.removeItem("jft_grammar_progress");
+                              localStorage.removeItem("jft_counters_progress");
 
                               setUserProfile(null);
                             }

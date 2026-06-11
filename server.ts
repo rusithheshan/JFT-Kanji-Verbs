@@ -180,6 +180,7 @@ Ensure your output is a strictly formatted JSON array containing all processed e
           verbsProgress: Number(user.verbsProgress || 0),
           adjectivesProgress: Number(user.adjectivesProgress || 0),
           grammarProgress: Number(user.grammarProgress || 0),
+          countersProgress: Number(user.countersProgress || 0),
           totalProgress: Number(user.totalProgress || 0),
           joinedAt: user.joinedAt || user.updatedAt || ''
         };
@@ -243,10 +244,12 @@ Ensure your output is a strictly formatted JSON array containing all processed e
         verbsProgress: 0,
         adjectivesProgress: 0,
         grammarProgress: 0,
+        countersProgress: 0,
         kanjiProgressMap: {},
         verbsProgressMap: {},
         adjectivesProgressMap: {},
         grammarProgressMap: {},
+        countersProgressMap: {},
         totalProgress: 0,
         updatedAt: now,
         joinedAt: now
@@ -275,10 +278,12 @@ Ensure your output is a strictly formatted JSON array containing all processed e
         verbsProgress = 0,
         adjectivesProgress = 0,
         grammarProgress = 0,
+        countersProgress = 0,
         kanjiProgressMap = {},
         verbsProgressMap = {},
         adjectivesProgressMap = {},
-        grammarProgressMap = {}
+        grammarProgressMap = {},
+        countersProgressMap = {}
       } = req.body;
 
       if (!email || !username) {
@@ -288,7 +293,7 @@ Ensure your output is a strictly formatted JSON array containing all processed e
       const list = getProfilesSafe();
       let matchedIdx = list.findIndex((u: any) => u.email.toLowerCase() === email.toLowerCase());
 
-      const totalProgress = Number(kanjiProgress) + Number(verbsProgress) + Number(adjectivesProgress) + Number(grammarProgress);
+      const totalProgress = Number(kanjiProgress) + Number(verbsProgress) + Number(adjectivesProgress) + Number(grammarProgress) + Number(countersProgress);
       const now = new Date().toISOString();
 
       const existingData = matchedIdx >= 0 ? list[matchedIdx] : {};
@@ -304,10 +309,12 @@ Ensure your output is a strictly formatted JSON array containing all processed e
         verbsProgress: Number(verbsProgress),
         adjectivesProgress: Number(adjectivesProgress),
         grammarProgress: Number(grammarProgress),
+        countersProgress: Number(countersProgress),
         kanjiProgressMap: Object.keys(kanjiProgressMap).length > 0 ? kanjiProgressMap : (existingData.kanjiProgressMap || {}),
         verbsProgressMap: Object.keys(verbsProgressMap).length > 0 ? verbsProgressMap : (existingData.verbsProgressMap || {}),
         adjectivesProgressMap: Object.keys(adjectivesProgressMap).length > 0 ? adjectivesProgressMap : (existingData.adjectivesProgressMap || {}),
         grammarProgressMap: Object.keys(grammarProgressMap).length > 0 ? grammarProgressMap : (existingData.grammarProgressMap || {}),
+        countersProgressMap: Object.keys(countersProgressMap).length > 0 ? countersProgressMap : (existingData.countersProgressMap || {}),
         totalProgress: totalProgress,
         updatedAt: now,
         joinedAt: matchedIdx >= 0 ? list[matchedIdx].joinedAt : now
