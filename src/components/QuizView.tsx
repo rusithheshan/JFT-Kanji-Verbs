@@ -29,7 +29,39 @@ import { JFTVerb } from "../data/preloadedVerbs";
 import { JFTAdjective } from "../data/preloadedAdjectives";
 import { PRELOADED_PARAGRAPHS, JFTParagraph, ParagraphToken } from "../data/paragraphTemplates";
 import CheckKanjiDrawingView from "./CheckKanjiDrawingView";
+import { preloadedCounters, CounterItem } from "../data/preloadedCounters";
 
+function toKanjiNumber(num: number): string {
+  const kanjiDigits = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+  if (num === 10) return "十";
+  if (num < 10) return kanjiDigits[num];
+  if (num < 20) return "十" + kanjiDigits[num % 10];
+  if (num === 20) return "二十";
+  if (num < 30) return "二十" + kanjiDigits[num % 10];
+  if (num === 30) return "三十";
+  if (num < 40) return "三十" + kanjiDigits[num % 10];
+  if (num === 40) return "四十";
+  if (num < 50) return "四十" + kanjiDigits[num % 10];
+  if (num === 50) return "五十";
+  if (num < 60) return "五十" + kanjiDigits[num % 10];
+  if (num === 60) return "六十";
+  if (num < 70) return "六十" + kanjiDigits[num % 10];
+  if (num === 70) return "七十";
+  if (num < 80) return "七十" + kanjiDigits[num % 10];
+  if (num === 80) return "八十";
+  if (num < 90) return "八十" + kanjiDigits[num % 10];
+  if (num === 90) return "九十";
+  if (num < 100) return "九十" + kanjiDigits[num % 10];
+  if (num === 100) return "百";
+  return String(num);
+}
+
+function getKanjiForm(num: number, counterChar: string): string {
+  if (counterChar === "つ" && num === 10) {
+    return "十";
+  }
+  return toKanjiNumber(num) + counterChar;
+}
 
 export type QuizMode =
   | "kanji_reading" // Kanji -> Hiragana
@@ -37,13 +69,14 @@ export type QuizMode =
   | "sinhala_verb_japanese" // Sinhala Verb -> Kanji (Furigana)
   | "japanese_verb_sinhala" // Japanese Verb -> Sinhala
   | "sinhala_adj_japanese" // Sinhala Adjective -> Japanese
-  | "japanese_adj_sinhala"; // Japanese Adjective -> Sinhala
+  | "japanese_adj_sinhala" // Japanese Adjective -> Sinhala
+  | "counting_system";
 
 interface QuizQuestion {
   prompt: string;
   correctAnswer: string;
   options: string[];
-  originalItem: KanjiCard | JFTVerb | JFTAdjective;
+  originalItem: KanjiCard | JFTVerb | JFTAdjective | CounterItem;
 }
 
 interface QuizAnswerHistory {
@@ -51,7 +84,7 @@ interface QuizAnswerHistory {
   correctAnswer: string;
   userChoice: string;
   isCorrect: boolean;
-  originalItem: KanjiCard | JFTVerb | JFTAdjective;
+  originalItem: KanjiCard | JFTVerb | JFTAdjective | CounterItem;
 }
 
 interface QuizViewProps {
@@ -603,14 +636,17 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
 
   // Generate the Quiz Questions
   const startQuiz = () => {
-    let pool: Array<KanjiCard | JFTVerb | JFTAdjective> = [];
+    let pool: Array<KanjiCard | JFTVerb | JFTAdjective | CounterItem> = [];
     let isVerbsMode = quizMode === "sinhala_verb_japanese" || quizMode === "japanese_verb_sinhala";
     let isAdjectivesMode = quizMode === "sinhala_adj_japanese" || quizMode === "japanese_adj_sinhala";
+    let isCountersMode = quizMode === "counting_system";
 
     if (isVerbsMode) {
       pool = [...verbsList];
     } else if (isAdjectivesMode) {
       pool = [...adjectivesList];
+    } else if (isCountersMode) {
+      pool = [...preloadedCounters];
     } else {
       pool = [...kanjiCards];
     }
@@ -631,7 +667,24 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
       let correctAnswer = "";
       let allPossibleAnswers: string[] = [];
 
-      if (!isVerbsMode && !isAdjectivesMode) {
+      if (isCountersMode) {
+        // Counters mode
+        const c = item as CounterItem;
+        const availableKeys = Object.keys(c.numbers).map(Number);
+        const randCount = availableKeys[Math.floor(Math.random() * availableKeys.length)] || 1;
+        const itemVal = c.numbers[randCount] || c.numbers[1];
+        const kanjiForm = getKanjiForm(randCount, c.counterChar);
+        
+        prompt = `ජපන් බසින් "${c.categorySinhala} ${randCount}ක්" සඳහා නිවැරදි පසු යෙදුම් පදය කුමක්ද?`;
+        correctAnswer = `${itemVal.japanese} (${kanjiForm}) (${itemVal.romaji})`;
+        
+        allPossibleAnswers = preloadedCounters.map((alternate) => {
+          const altKeys = Object.keys(alternate.numbers).map(Number);
+          const randAltNum = altKeys[Math.floor(Math.random() * altKeys.length)] || randCount;
+          const altVal = alternate.numbers[randAltNum] || alternate.numbers[randCount] || alternate.numbers[1];
+          return `${altVal.japanese} (${getKanjiForm(randAltNum, alternate.counterChar)}) (${altVal.romaji})`;
+        });
+      } else if (!isVerbsMode && !isAdjectivesMode) {
         // Kanji mode
         const kanjiCard = item as KanjiCard;
         if (quizMode === "kanji_reading") {
@@ -991,6 +1044,30 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
                   </span>
                 </button>
 
+                {/* Mode 7: Counting System Test */}
+                <button
+                  type="button"
+                  onClick={() => setQuizMode("counting_system")}
+                  className={`p-5 rounded-[20px] text-left border-2 transition-all duration-200 flex flex-col justify-between h-40 group ${
+                    quizMode === "counting_system"
+                      ? "border-[#52796f] bg-[#cad2c5]/25"
+                      : "border-[#e9e2d7] bg-white hover:border-[#84a98c]"
+                  }`}
+                >
+                  <div className="space-y-1.5">
+                    <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#cad2c5] text-[#2f3e46]">COUNTING SYSTEMS (ගණන් කිරීම්)</span>
+                    <h4 className="font-extrabold text-[#354f52] text-sm group-hover:text-[#52796f] transition-colors">
+                      Counting System ➔ Japanese Counter
+                    </h4>
+                    <p className="text-xs text-[#84a98c] leading-relaxed">
+                      ද්‍රව්‍ය ගණන් කරන ආකාරය (සිංහල අර්ථය) දෙන අතර ගැළපෙන ජපන් පසුයෙදුම තෝරන්න.
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-bold text-[#52796f] self-end flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                    තෝරන්න <ChevronRight className="w-3.5 h-3.5" />
+                  </span>
+                </button>
+
               </div>
             </div>
 
@@ -1006,6 +1083,8 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
                       ? verbsList.length 
                       : quizMode === "sinhala_adj_japanese" || quizMode === "japanese_adj_sinhala"
                       ? adjectivesList.length
+                      : quizMode === "counting_system"
+                      ? preloadedCounters.length
                       : kanjiCards.length;
                   if (num > maxAvailable) return null;
 
@@ -1804,6 +1883,7 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
                   {quizMode === "japanese_verb_sinhala" && "පහත ජපන් ක්‍රියාපදයට ගැළපෙන සිංහල තේරුම (Select Sinhala Meaning)"}
                   {quizMode === "sinhala_adj_japanese" && "පහත සිංහල විශේෂණ පදයේ නිවැරදි ජපන් වචනය තෝරන්න (Select Japanese Adjective)"}
                   {quizMode === "japanese_adj_sinhala" && "පහත ජපන් විශේෂණ පදයට ගැළපෙන සිංහල තේරුම (Select Sinhala Meaning)"}
+                  {quizMode === "counting_system" && "පහත ප්‍රශ්නයට ගැළපෙන නිවැරදි ජපන් පසුයෙදුම තෝරන්න (Select Japanese Counter)"}
                 </span>
 
                 <motion.h3 
@@ -1883,7 +1963,11 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
                   <div className="space-y-1">
                     <span className="text-[10px] font-black uppercase text-[#84a98c] block">CORRECT TRANSLATION INFO</span>
                     <p className="text-xs text-[#52796f] font-bold leading-relaxed">
-                      {"englishMeaning" in currentQuestion.originalItem ? (
+                      {"counterChar" in currentQuestion.originalItem ? (
+                        <>
+                          <strong>Counter Character:</strong> <span className="font-sans text-xs bg-[#f0ede6] text-[#2f3e46] px-1.5 py-0.5 rounded font-black">{(currentQuestion.originalItem as CounterItem).counterChar}</span> | <strong>Hiragana:</strong> {(currentQuestion.originalItem as CounterItem).hiraganaChar} | <strong>Sinhala Category:</strong> {(currentQuestion.originalItem as CounterItem).categorySinhala}
+                        </>
+                      ) : "englishMeaning" in currentQuestion.originalItem ? (
                         <>
                           <strong>English Meaning:</strong> {(currentQuestion.originalItem as KanjiCard).englishMeaning} | <strong>Sinhala:</strong> {(currentQuestion.originalItem as KanjiCard).sinhalaMeaning}
                         </>
@@ -2020,7 +2104,11 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
 
                       {/* Add meanings */}
                       <p className="text-[10px] text-slate-400">
-                        {"englishMeaning" in record.originalItem ? (
+                        {"counterChar" in record.originalItem ? (
+                          <>
+                            Counter: {(record.originalItem as CounterItem).counterChar} | Hiragana: {(record.originalItem as CounterItem).hiraganaChar} | Sinhala Category: {(record.originalItem as CounterItem).categorySinhala}
+                          </>
+                        ) : "englishMeaning" in record.originalItem ? (
                           <>
                             Sinhala: {(record.originalItem as KanjiCard).sinhalaMeaning} | Furigana: {(record.originalItem as KanjiCard).furigana}
                           </>

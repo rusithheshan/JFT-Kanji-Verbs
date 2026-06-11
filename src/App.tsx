@@ -50,9 +50,48 @@ import StatisticsView from "./components/StatisticsView";
 import AlphabetView from "./components/AlphabetView";
 import { preloadedCounters, CounterItem } from "./data/preloadedCounters";
 
+function toKanjiNumber(num: number): string {
+  const kanjiDigits = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+  if (num === 10) return "十";
+  if (num < 10) return kanjiDigits[num];
+  if (num < 20) return "十" + kanjiDigits[num % 10];
+  if (num === 20) return "二十";
+  if (num < 30) return "二十" + kanjiDigits[num % 10];
+  if (num === 30) return "三十";
+  if (num < 40) return "三十" + kanjiDigits[num % 10];
+  if (num === 40) return "四十";
+  if (num < 50) return "四十" + kanjiDigits[num % 10];
+  if (num === 50) return "五十";
+  if (num < 60) return "五十" + kanjiDigits[num % 10];
+  if (num === 60) return "六十";
+  if (num < 70) return "六十" + kanjiDigits[num % 10];
+  if (num === 70) return "七十";
+  if (num < 80) return "七十" + kanjiDigits[num % 10];
+  if (num === 80) return "八十";
+  if (num < 90) return "八十" + kanjiDigits[num % 10];
+  if (num === 90) return "九十";
+  if (num < 100) return "九十" + kanjiDigits[num % 10];
+  if (num === 100) return "百";
+  return String(num);
+}
+
+function getKanjiForm(num: number, counterChar: string): string {
+  if (counterChar === "つ" && num === 10) {
+    return "十";
+  }
+  return toKanjiNumber(num) + counterChar;
+}
+
 export default function App() {
   // Navigation tabs
-  const [activeTab, setActiveTab] = useState<"alphabet" | "learn" | "test" | "verbs" | "adjectives" | "grammar" | "quiz" | "dictionary" | "stats" | "counters">("alphabet");
+  const [activeTab, setActiveTab] = useState<"alphabet" | "learn" | "test" | "verbs" | "adjectives" | "grammar" | "quiz" | "dictionary" | "stats" | "counters" | "profile">(() => {
+    const saved = localStorage.getItem("jft_active_tab");
+    return (saved as any) || "alphabet";
+  });
+
+  useEffect(() => {
+    localStorage.setItem("jft_active_tab", activeTab);
+  }, [activeTab]);
 
   // Supporting unified nested Study vs Test mode for JFT Kanji (matching Verbs/Adjectives)
   const [kanjiViewMode, setKanjiViewMode] = useState<"learn" | "test">("learn");
@@ -495,20 +534,93 @@ export default function App() {
     });
   };
 
+  const getQuestionWordHiraganaAndKanji = (c: CounterItem): { hiragana: string, kanji: string } => {
+    if (c.questionWordJapanese === "いくつ") {
+      return { hiragana: "いくつ", kanji: "いくつ" };
+    }
+    if (c.questionWordJapanese.includes("何歳")) {
+      return { hiragana: "なんさい / おいくつ", kanji: "何歳 / おいくつ" };
+    }
+    const romajiMap: { [key: string]: string } = {
+      "Nannin": "なんみに", // fallback
+      "nannin": "なんにん",
+      "nannichi": "なんnich",
+      "Nannichi": "なんにචි",
+      "Nankagetsu": "なんかげつ",
+      "Nannen": "なんねん",
+      "Nankai": "なんかい",
+      "Nandai": "なんだい",
+      "Nanbon": "なんぼん",
+      "Nanmai": "なんまい",
+      "Nansatsu": "なんさつ",
+      "Nanbiki": "なんびき",
+      "Nantou": "なんとう",
+      "Nanwa": "なんわ",
+      "Nangai": "なんがい",
+      "Nanzoku": "なんぞく",
+      "Nanchaku": "なんちゃක",
+      "Nanbai": "なんばい",
+      "Nansai": "なんさい"
+    };
+    const romKey = c.questionWordRomaji.replace(/\s+/g, "");
+    
+    // exact mappings
+    if (romKey === "Nannin") return { hiragana: "なんにん", kanji: c.questionWordJapanese };
+    if (romKey === "Nannichi") return { hiragana: "なんにち", kanji: c.questionWordJapanese };
+    // let's just match directly
+    const directMap: { [key: string]: string } = {
+      "cnt_2": "なんにん", // 人
+      "cnt_3": "なんにち", // 日
+      "cnt_4": "knowledge_month",
+      "cnt_5": "なんねん", // 年
+      "cnt_6": "なんかい", // 回
+      "cnt_7": "なんだい", // 台
+      "cnt_8": "なんぼん", // 本
+      "cnt_9": "なんまい", // 枚
+      "cnt_10": "なんさつ", // 冊
+      "cnt_11": "なんびき", // 匹
+      "cnt_12": "なんとう", // 頭
+      "cnt_13": "なんわ", // 羽
+      "cnt_14": "なんがい", // 階
+      "cnt_15": "なんぞく", // 足
+      "cnt_16": "なんちゃく", // 着
+      "cnt_17": "なんばい" // 杯
+    };
+    
+    // Safe lookup is cnt_id
+    const mapped = directMap[c.id];
+    if (mapped) {
+      return { hiragana: mapped, kanji: c.questionWordJapanese };
+    }
+    
+    // cnt_4 (months elapsed)
+    if (c.id === "cnt_4") {
+      return { hiragana: "なんかげつ", kanji: "何か月" };
+    }
+    
+    // cnt_18 (age)
+    if (c.id === "cnt_18") {
+      return { hiragana: "なんさい / おいくつ", kanji: "何歳 / おいくつ" };
+    }
+
+    return { hiragana: c.questionWordJapanese, kanji: c.questionWordJapanese };
+  };
+
   const handleStartCountersQuiz = (option = countersQuizOption) => {
     const deck: ControlQuizQuestion[] = [];
     
     // For each of the 18 counters:
     for (let i = 0; i < counters.length; i++) {
       const c = counters[i];
-      // Pick a random count 1 to 10 or "question"
-      // Let's bias: 80% chance of 1-10 count, 20% chance of "question word"
+      // Pick a random count or "question" from the actual available numbers
+      // Let's bias: 80% chance of standard count, 20% chance of "question word"
       const isQuestionWord = Math.random() < 0.2;
       let randCount = 1;
+      const availableKeys = Object.keys(c.numbers).map(Number);
       if (isQuestionWord) {
         randCount = 0; // represent questionWord
       } else {
-        randCount = Math.floor(Math.random() * 10) + 1; // 1 to 10
+        randCount = availableKeys[Math.floor(Math.random() * availableKeys.length)];
       }
 
       let questionText = "";
@@ -518,7 +630,8 @@ export default function App() {
       if (option === "sinhala") {
         // Sinhala Meaning Mode
         if (randCount === 0) {
-          questionText = `"${c.questionWordJapanese}" යන්නෙහි නිවැරදි සිංහල තේරුම තෝරන්න.`;
+          const qw = getQuestionWordHiraganaAndKanji(c);
+          questionText = `ජපන් බසින් "${qw.hiragana} (${qw.kanji})" යන්නෙහි නිවැරදි සිංහල තේරුම තෝරන්න.`;
           correctAns = `${c.categorySinhala} (${c.questionWordSinhala})`;
           allChoicesSet.add(correctAns);
           // Distractors: other question words or counter names
@@ -528,7 +641,8 @@ export default function App() {
           }
         } else {
           const itemVal = c.numbers[randCount] || c.numbers[1];
-          questionText = `ජපන් බසින් "${itemVal.japanese}" යන්නෙහි නිවැරදි සිංහල තේරුම කුමක්ද?`;
+          const kanjiForm = getKanjiForm(randCount, c.counterChar);
+          questionText = `ජපන් බසින් "${itemVal.japanese} (${kanjiForm})" යන්නෙහි නිවැරදි සිංහල තේරුම කුමක්ද?`;
           correctAns = `${c.categorySinhala} - ${randCount}ක්`;
           allChoicesSet.add(correctAns);
           while (allChoicesSet.size < 4) {
@@ -539,28 +653,33 @@ export default function App() {
       } else if (option === "japanese") {
         // Japanese Counter Word Mode
         if (randCount === 0) {
+          const qw = getQuestionWordHiraganaAndKanji(c);
           questionText = `"${c.categorySinhala} (${c.categoryEnglish})" සඳහා කීයක්ද / කීදෙනෙක්ද කියා ඇසීමට යොදාගන්නා Question Word එක කුමක්ද?`;
-          correctAns = `${c.questionWordJapanese} (${c.questionWordRomaji})`;
+          correctAns = `${qw.hiragana} (${qw.kanji}) (${c.questionWordRomaji})`;
           allChoicesSet.add(correctAns);
           while (allChoicesSet.size < 4) {
             const alternate = counters[Math.floor(Math.random() * counters.length)];
-            allChoicesSet.add(`${alternate.questionWordJapanese} (${alternate.questionWordRomaji})`);
+            const altQw = getQuestionWordHiraganaAndKanji(alternate);
+            allChoicesSet.add(`${altQw.hiragana} (${altQw.kanji}) (${alternate.questionWordRomaji})`);
           }
         } else {
           const itemVal = c.numbers[randCount] || c.numbers[1];
+          const kanjiForm = getKanjiForm(randCount, c.counterChar);
           questionText = `"${c.categorySinhala} ${randCount}ක්" සඳහා නිවැරදි ජපන් පසු යෙදුම් පදය කුමක්ද?`;
-          correctAns = `${itemVal.japanese} (${itemVal.romaji})`;
+          correctAns = `${itemVal.japanese} (${kanjiForm}) (${itemVal.romaji})`;
           allChoicesSet.add(correctAns);
           while (allChoicesSet.size < 4) {
             const alternate = counters[Math.floor(Math.random() * counters.length)];
-            const randAltNum = Math.floor(Math.random() * 10) + 1;
+            const altKeys = Object.keys(alternate.numbers).map(Number);
+            const randAltNum = altKeys[Math.floor(Math.random() * altKeys.length)];
             const altVal = alternate.numbers[randAltNum] || alternate.numbers[randCount] || alternate.numbers[1];
-            allChoicesSet.add(`${altVal.japanese} (${altVal.romaji})`);
+            const altKanjiForm = getKanjiForm(randAltNum, alternate.counterChar);
+            allChoicesSet.add(`${altVal.japanese} (${altKanjiForm}) (${altVal.romaji})`);
           }
         }
       } else {
         // Relationship Mode
-        questionText = `පහත සඳහන් ජපන් පසු යෙදුම (Counter Character) "${c.counterChar}" (${c.hiraganaChar}) භාවිතා කරන්නේ කුමක් සඳහාද?`;
+        questionText = `පහත සඳහන් ජපන් පසු යෙදුම (Counter Character) "${c.counterChar}" (${c.hiraganaChar}) භාවිතා ਕਰන්නේ කුමක් සඳහාද?`;
         correctAns = `${c.categorySinhala} (${c.categoryEnglish})`;
         allChoicesSet.add(correctAns);
         while (allChoicesSet.size < 4) {
@@ -2971,7 +3090,7 @@ export default function App() {
 
                   {/* Counters Cards Grid */}
                   {filteredCounters.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
                       {filteredCounters.map((c) => {
                         const status = countersProgress[c.id] || "UNSTUDIED";
                         return (
@@ -3020,21 +3139,23 @@ export default function App() {
                               </div>
                             </div>
 
-                            {/* Numbers 1-10 items */}
+                            {/* Numbers items */}
                             <div className="p-4 space-y-2">
                               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide block">
-                                🔢 Counters 1 - 10 (ගණන් කිරීම්)
+                                🔢 Counters 1 - {Math.max(...Object.keys(c.numbers).map(Number))} (ගණන් කිරීම්)
                               </span>
-                              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-                                {Object.keys(c.numbers).map((numKey) => {
-                                  const num = Number(numKey);
+                              <div className="space-y-2">
+                                {Object.keys(c.numbers).map(Number).map((num) => {
                                   const val = c.numbers[num];
                                   return (
-                                    <div key={num} className="flex justify-between items-center text-[11px] border-b border-dashed border-[#ece7dc]/60 pb-1">
-                                      <span className="font-black text-[#52796f] mr-1">
+                                    <div key={num} className="grid grid-cols-12 gap-1.5 items-center text-[11px] border-b border-dashed border-[#ece7dc]/60 pb-1 text-left">
+                                      <span className="col-span-2 font-black text-[#84a98c]">
                                         {num}:
                                       </span>
-                                      <div className="text-right">
+                                      <span className="col-span-4 font-black font-sans text-xs text-[#bc6c25] text-left">
+                                        {getKanjiForm(num, c.counterChar)}
+                                      </span>
+                                      <div className="col-span-6 text-left">
                                         <span className="font-extrabold text-[#354f52] block leading-none">
                                           {val.japanese}
                                         </span>

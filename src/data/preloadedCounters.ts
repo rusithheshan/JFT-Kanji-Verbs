@@ -80,7 +80,28 @@ export const preloadedCounters: CounterItem[] = [
       7: { japanese: "なのか", romaji: "nanoka" },
       8: { japanese: "ようか", romaji: "youka" },
       9: { japanese: "ここのか", romaji: "kokonoka" },
-      10: { japanese: "とおか", romaji: "tooka" }
+      10: { japanese: "とおか", romaji: "tooka" },
+      11: { japanese: "じゅういちにち", romaji: "juuichinichi" },
+      12: { japanese: "じゅうににち", romaji: "juuninichi" },
+      13: { japanese: "じゅうさんにち", romaji: "juusannichi" },
+      14: { japanese: "じゅうよっか", romaji: "juuyokka" },
+      15: { japanese: "じゅうごにち", romaji: "juugonichi" },
+      16: { japanese: "じゅうろくにち", romaji: "juurokunichi" },
+      17: { japanese: "じゅうしちにち / じゅうななにち", romaji: "juushichinichi / juunananichi" },
+      18: { japanese: "じゅうはちにち", romaji: "juuhachinichi" },
+      19: { japanese: "じゅうくにち", romaji: "juukunichi" },
+      20: { japanese: "はつか", romaji: "hatsuka" },
+      21: { japanese: "にじゅういちにち", romaji: "nijuuichinichi" },
+      22: { japanese: "にじゅうににち", romaji: "nijuuninichi" },
+      23: { japanese: "にじゅうさんにち", romaji: "nijuusannichi" },
+      24: { japanese: "にじゅうよっか", romaji: "nijuuyokka" },
+      25: { japanese: "にじゅうごにち", romaji: "nijuugonichi" },
+      26: { japanese: "にじゅうろくにち", romaji: "nijuurokunichi" },
+      27: { japanese: "にじゅうしちにち / にじゅうななにち", romaji: "nijuushichinichi / nijuunananichi" },
+      28: { japanese: "にじゅうはちにち", romaji: "nijuuhachinichi" },
+      29: { japanese: "にじゅうくにち", romaji: "nijuukunichi" },
+      30: { japanese: "さんじゅうにち", romaji: "sanjuunichi" },
+      31: { japanese: "さんじゅういちにち", romaji: "sanjuuichinichi" }
     }
   },
   {
@@ -102,7 +123,9 @@ export const preloadedCounters: CounterItem[] = [
       7: { japanese: "ななかげつ", romaji: "nanakagetsu" },
       8: { japanese: "はっかげつ", romaji: "hakkagetsu" },
       9: { japanese: "きゅうかげつ", romaji: "kyuukagetsu" },
-      10: { japanese: "じゅっかげつ", romaji: "jukkagetsu" }
+      10: { japanese: "じゅっかげつ", romaji: "jukkagetsu" },
+      11: { japanese: "じゅういっかげつ", romaji: "juuikkagetsu" },
+      12: { japanese: "じゅうにかげつ", romaji: "juunikagetsu" }
     }
   },
   {
@@ -404,14 +427,32 @@ export const preloadedCounters: CounterItem[] = [
     numbers: {
       1: { japanese: "いっさい", romaji: "issai" },
       2: { japanese: "にさい", romaji: "nisai" },
-      3: { japanese: "さんさい", romaji: "sansさい" },
+      3: { japanese: "さんさい", romaji: "sansai" },
       4: { japanese: "よんさい", romaji: "yonsai" },
       5: { japanese: "ごさい", romaji: "gosai" },
       6: { japanese: "ろくさい", romaji: "rokusai" },
       7: { japanese: "ななさい", romaji: "nanasai" },
       8: { japanese: "はっさい", romaji: "hassai" },
       9: { japanese: "きゅうさい", romaji: "kyuusai" },
-      10: { japanese: "じゅっさい", romaji: "jussai" }
+      10: { japanese: "じゅっさい", romaji: "jussai" },
+      11: { japanese: "じゅういっさい", romaji: "juuissai" },
+      12: { japanese: "じゅうにさい", romaji: "juunisai" },
+      13: { japanese: "じゅうさんさい", romaji: "juusansai" },
+      14: { japanese: "じゅうよんさい", romaji: "juuyonsai" },
+      15: { japanese: "じゅうごさい", romaji: "juugosai" },
+      16: { japanese: "じゅうろくさい", romaji: "juurokusai" },
+      17: { japanese: "じゅうななさい", romaji: "juunananasai" },
+      18: { japanese: "じゅうはっさい", romaji: "juuhassai" },
+      19: { japanese: "じゅうきゅうさい", romaji: "juukyuusai" },
+      20: { japanese: "はたち / にじゅっさい", romaji: "hatachi / nijussai" },
+      30: { japanese: "さんじゅっさい", romaji: "sanjussai" },
+      40: { japanese: "よんじゅっさい", romaji: "yonjussai" },
+      50: { japanese: "ごじゅっさい", romaji: "gojussai" },
+      60: { japanese: "ろくじゅっさい", romaji: "rokujussai" },
+      70: { japanese: "ななじゅっさい", romaji: "nanajussai" },
+      80: { japanese: "はちじゅっさい", romaji: "hachijussai" },
+      90: { japanese: "きゅうじゅっさい", romaji: "kyuujussai" },
+      100: { japanese: "ひゃくさい", romaji: "hyakusai" }
     }
   }
 ];
