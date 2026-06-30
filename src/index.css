@@ -12,6 +12,11 @@ body {
   font-family: var(--font-sans);
   background-color: #fdfbf7;
   color: #352d28;
+  touch-action: manipulation;
+}
+
+button, a, select, input, [role="button"] {
+  touch-action: manipulation;
 }
 
 .backface-hidden {
