@@ -841,6 +841,22 @@ export default function App() {
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [isLeaderboardLoading, setIsLeaderboardLoading] = useState(false);
 
+  // Helper to get local leaderboard from localStorage
+  const getLocalLeaderboard = (): any[] => {
+    try {
+      const saved = localStorage.getItem("jft_local_leaderboard");
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [];
+  };
+
+  // Helper to save local leaderboard to localStorage
+  const saveLocalLeaderboard = (list: any[]) => {
+    try {
+      localStorage.setItem("jft_local_leaderboard", JSON.stringify(list));
+    } catch (e) {}
+  };
+
   // Load backend shared leaderboard data
   const fetchLeaderboard = async () => {
     try {
@@ -848,13 +864,58 @@ export default function App() {
       const res = await fetch("/api/leaderboard");
       if (res.ok) {
         const data = await res.json();
-        setLeaderboard(data.leaderboard || []);
+        if (data.leaderboard && data.leaderboard.length > 0) {
+          const serverList = data.leaderboard;
+          const localList = getLocalLeaderboard();
+          const merged = [...serverList];
+          
+          localList.forEach((localUser: any) => {
+            const idx = merged.findIndex((u: any) => u.id === localUser.id);
+            if (idx >= 0) {
+              if (localUser.totalProgress > (merged[idx].totalProgress || 0)) {
+                merged[idx] = localUser;
+              }
+            } else {
+              merged.push(localUser);
+            }
+          });
+          const sorted = merged.sort((a, b) => b.totalProgress - a.totalProgress);
+          setLeaderboard(sorted);
+          saveLocalLeaderboard(sorted);
+          return;
+        }
       }
     } catch (e) {
-      console.error("Error loaded leaderboard:", e);
+      console.warn("Error loading remote leaderboard, falling back to local list:", e);
     } finally {
       setIsLeaderboardLoading(false);
     }
+
+    // Local fallback
+    const localList = getLocalLeaderboard();
+    if (localList.length === 0 && userProfile) {
+      const kCount = Object.values(progress).filter((s) => s === "OK").length;
+      const vCount = Object.values(verbsProgress).filter((s) => s === "OK").length;
+      const aCount = Object.values(adjectivesProgress).filter((s) => s === "OK").length;
+      const gCount = Object.values(grammarProgress).filter((s) => s === "OK").length;
+      const cCount = Object.values(countersProgress).filter((s) => s === "OK").length;
+      const myId = hashEmailSafe(userProfile.email);
+      localList.push({
+        id: myId,
+        username: userProfile.username,
+        avatar: userProfile.avatar,
+        targetExam: userProfile.targetExam || 'JFT-Basic',
+        kanjiProgress: kCount,
+        verbsProgress: vCount,
+        adjectivesProgress: aCount,
+        grammarProgress: gCount,
+        countersProgress: cCount,
+        totalProgress: kCount + vCount + aCount + gCount + cCount,
+        joinedAt: userProfile.joinedAt || new Date().toISOString()
+      });
+      saveLocalLeaderboard(localList);
+    }
+    setLeaderboard(localList.sort((a: any, b: any) => b.totalProgress - a.totalProgress));
   };
 
   const loadProfileAndProgressFromServer = async (email: string) => {
@@ -888,7 +949,23 @@ export default function App() {
         }
       }
     } catch (e) {
-      console.error("Failed to fetch profile saved progress:", e);
+      console.warn("Failed to fetch server profile, loading local progress instead:", e);
+    }
+
+    // Local fallback
+    try {
+      const kp = localStorage.getItem("jft_kanji_progress");
+      if (kp) setProgress(JSON.parse(kp));
+      const vp = localStorage.getItem("jft_verbs_progress");
+      if (vp) setVerbsProgress(JSON.parse(vp));
+      const ap = localStorage.getItem("jft_adjectives_progress");
+      if (ap) setAdjectivesProgress(JSON.parse(ap));
+      const gp = localStorage.getItem("jft_grammar_progress");
+      if (gp) setGrammarProgress(JSON.parse(gp));
+      const cp = localStorage.getItem("jft_counters_progress");
+      if (cp) setCountersProgress(JSON.parse(cp));
+    } catch (e) {
+      console.error("Local storage progress load fallback error:", e);
     }
     return null;
   };
@@ -903,14 +980,39 @@ export default function App() {
     cProgress = countersProgress
   ) => {
     if (!profile) return;
-    try {
-      const kCount = Object.values(kanjis).filter((s) => s === "OK").length;
-      const vCount = Object.values(vProgress).filter((s) => s === "OK").length;
-      const aCount = Object.values(aProgress).filter((s) => s === "OK").length;
-      const gCount = Object.values(gProgress).filter((s) => s === "OK").length;
-      const cCount = Object.values(cProgress).filter((s) => s === "OK").length;
+    const kCount = Object.values(kanjis).filter((s) => s === "OK").length;
+    const vCount = Object.values(vProgress).filter((s) => s === "OK").length;
+    const aCount = Object.values(aProgress).filter((s) => s === "OK").length;
+    const gCount = Object.values(gProgress).filter((s) => s === "OK").length;
+    const cCount = Object.values(cProgress).filter((s) => s === "OK").length;
+    const total = kCount + vCount + aCount + gCount + cCount;
 
-      await fetch("/api/profile/sync", {
+    // Update local list
+    const localList = getLocalLeaderboard();
+    const meId = hashEmailSafe(profile.email);
+    const existingIdx = localList.findIndex((x: any) => x.id === meId);
+    const myEntry = {
+      id: meId,
+      username: profile.username,
+      avatar: profile.avatar,
+      targetExam: profile.targetExam || 'JFT-Basic',
+      kanjiProgress: kCount,
+      verbsProgress: vCount,
+      adjectivesProgress: aCount,
+      grammarProgress: gCount,
+      countersProgress: cCount,
+      totalProgress: total,
+      joinedAt: profile.joinedAt || new Date().toISOString()
+    };
+    if (existingIdx >= 0) {
+      localList[existingIdx] = myEntry;
+    } else {
+      localList.push(myEntry);
+    }
+    saveLocalLeaderboard(localList);
+
+    try {
+      const res = await fetch("/api/profile/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -929,15 +1031,25 @@ export default function App() {
           countersProgressMap: cProgress
         }),
       });
-      // Fetch latest leaderboard
-      const res = await fetch("/api/leaderboard");
       if (res.ok) {
-        const data = await res.json();
-        setLeaderboard(data.leaderboard || []);
+        const rLeaderboard = await fetch("/api/leaderboard");
+        if (rLeaderboard.ok) {
+          const data = await rLeaderboard.json();
+          // Merge local updates
+          const merged = (data.leaderboard || []).filter((u: any) => u.id !== meId);
+          merged.push(myEntry);
+          const sorted = merged.sort((a: any, b: any) => b.totalProgress - a.totalProgress);
+          setLeaderboard(sorted);
+          saveLocalLeaderboard(sorted);
+          return;
+        }
       }
     } catch (e) {
-      console.error("Failed to sync progress with leaderboard:", e);
+      console.warn("Failed to sync progress with remote server (offline / static mode):", e);
     }
+
+    // Local fallback display
+    setLeaderboard(localList.sort((a: any, b: any) => b.totalProgress - a.totalProgress));
   };
 
   // Sync profile state changes to localStorage
@@ -1447,28 +1559,84 @@ export default function App() {
           body: JSON.stringify({ username, targetExam, avatar }),
         });
 
-        const data = await res.json();
-        if (res.ok && data.success) {
-          // Standard progress maps will start empty on a new session as requested
-          setProgress({});
-          setVerbsProgress({});
-          setAdjectivesProgress({});
-          setGrammarProgress({});
-          setCountersProgress({});
-          localStorage.removeItem("jft_kanji_progress");
-          localStorage.removeItem("jft_verbs_progress");
-          localStorage.removeItem("jft_adjectives_progress");
-          localStorage.removeItem("jft_grammar_progress");
-          localStorage.removeItem("jft_counters_progress");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            // Standard progress maps will start empty on a new session as requested
+            setProgress({});
+            setVerbsProgress({});
+            setAdjectivesProgress({});
+            setGrammarProgress({});
+            setCountersProgress({});
+            localStorage.removeItem("jft_kanji_progress");
+            localStorage.removeItem("jft_verbs_progress");
+            localStorage.removeItem("jft_adjectives_progress");
+            localStorage.removeItem("jft_grammar_progress");
+            localStorage.removeItem("jft_counters_progress");
 
-          setUserProfile(data.profile);
-          await loadProfileAndProgressFromServer(data.profile.email);
-        } else {
-          setAuthError(data.error || "ඇතුල් වීමේ දෝෂයකි. (Entry error).");
+            setUserProfile(data.profile);
+            await loadProfileAndProgressFromServer(data.profile.email);
+            return;
+          }
         }
+        throw new Error("Server response not ok or data.success false");
       } catch (err) {
-        console.error("Simple enter error:", err);
-        setAuthError("සම්බන්ධතාවය අසාර්ථකයි. (Connection failed).");
+        console.warn("Simple enter error, falling back to local storage:", err);
+        
+        // Standard progress maps will start empty on a new session as requested
+        setProgress({});
+        setVerbsProgress({});
+        setAdjectivesProgress({});
+        setGrammarProgress({});
+        setCountersProgress({});
+        localStorage.removeItem("jft_kanji_progress");
+        localStorage.removeItem("jft_verbs_progress");
+        localStorage.removeItem("jft_adjectives_progress");
+        localStorage.removeItem("jft_grammar_progress");
+        localStorage.removeItem("jft_counters_progress");
+
+        const localEmail = username.toLowerCase().replace(/[^a-z0-9]/g, "_") + "_" + Date.now() + "@student.com";
+        const localProfile = {
+          email: localEmail,
+          username: username,
+          avatar: avatar,
+          targetExam: targetExam,
+          kanjiProgress: 0,
+          verbsProgress: 0,
+          adjectivesProgress: 0,
+          grammarProgress: 0,
+          countersProgress: 0,
+          kanjiProgressMap: {},
+          verbsProgressMap: {},
+          adjectivesProgressMap: {},
+          grammarProgressMap: {},
+          countersProgressMap: {},
+          totalProgress: 0,
+          joinedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+
+        setUserProfile(localProfile);
+        localStorage.setItem("jft_user_profile", JSON.stringify(localProfile));
+
+        // Add user to local leaderboard
+        const localList = getLocalLeaderboard();
+        const meId = hashEmailSafe(localEmail);
+        localList.push({
+          id: meId,
+          username: username,
+          avatar: avatar,
+          targetExam: targetExam,
+          kanjiProgress: 0,
+          verbsProgress: 0,
+          adjectivesProgress: 0,
+          grammarProgress: 0,
+          countersProgress: 0,
+          totalProgress: 0,
+          joinedAt: localProfile.joinedAt
+        });
+        saveLocalLeaderboard(localList);
+        setLeaderboard(localList.sort((a: any, b: any) => b.totalProgress - a.totalProgress));
       }
     };
 
