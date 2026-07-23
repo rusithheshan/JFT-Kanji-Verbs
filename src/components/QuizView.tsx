@@ -22,7 +22,9 @@ import {
   Ear,
   Mic,
   Edit3,
-  Shuffle
+  Shuffle,
+  Clock,
+  Timer
 } from "lucide-react";
 import { KanjiCard } from "../data/preloadedKanji";
 import { JFTVerb } from "../data/preloadedVerbs";
@@ -98,8 +100,36 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
   // Setup States
   const [activeQuizSubMode, setActiveQuizSubMode] = useState<"standard" | "paragraph" | "drawing">("standard");
   const [quizMode, setQuizMode] = useState<QuizMode>("kanji_reading");
-  const [questionCount, setQuestionCount] = useState<number>(10);
+  const [questionCount, setQuestionCount] = useState<number | "ALL">(10);
+  const [timeLimit, setTimeLimit] = useState<number>(0); // 0 = NO timer
+  const [timeLeft, setTimeLeft] = useState<number>(0);
+  const [isTimeExpired, setIsTimeExpired] = useState<boolean>(false);
   const [gameState, setGameState] = useState<"setup" | "playing" | "summary">("setup");
+
+  // Timer countdown helper and effect
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  };
+
+  useEffect(() => {
+    if (gameState !== "playing" || timeLimit <= 0) return;
+
+    const timerInterval = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timerInterval);
+          setIsTimeExpired(true);
+          setGameState("summary");
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timerInterval);
+  }, [gameState, timeLimit]);
 
   // Paragraph trainer states
   const [paragraphs, setParagraphs] = useState<JFTParagraph[]>(() => {
@@ -658,15 +688,16 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
 
     // Shuffle pool and construct active items
     let activeItems: Array<KanjiCard | JFTVerb | JFTAdjective | CounterItem> = [];
+    const targetCount = questionCount === "ALL" ? pool.length : Math.min(questionCount, pool.length);
+
     if (isCountersMode) {
-      for (let i = 0; i < questionCount; i++) {
+      for (let i = 0; i < targetCount; i++) {
         activeItems.push(preloadedCounters[i % preloadedCounters.length]);
       }
       activeItems = [...activeItems].sort(() => 0.5 - Math.random());
     } else {
       const shuffledPool = [...pool].sort(() => 0.5 - Math.random());
-      const selectedCount = Math.min(questionCount, shuffledPool.length);
-      activeItems = shuffledPool.slice(0, selectedCount);
+      activeItems = shuffledPool.slice(0, targetCount);
     }
 
     // Build questions
@@ -828,6 +859,8 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
     setHistory([]);
     setStreak(0);
     setMaxStreak(0);
+    setIsTimeExpired(false);
+    setTimeLeft(timeLimit > 0 ? timeLimit : 0);
     setGameState("playing");
 
     // Pronounce first question if relevant (Japanese prompt or option in Japanese)
@@ -1152,37 +1185,94 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
 
             {/* Questions count choice */}
             <div className="space-y-3.5">
-              <h3 className="text-xs font-extrabold text-[#52796f] uppercase tracking-wider">
-                ප්‍රශ්න ගණන තෝරන්න (Select Question Volume)
+              <h3 className="text-xs font-extrabold text-[#52796f] uppercase tracking-wider flex items-center gap-1.5">
+                <HelpCircle className="w-4 h-4 text-[#bc6c25]" /> ප්‍රශ්න ගණන තෝරන්න (Select Question Volume)
               </h3>
-              <div className="flex gap-2">
-                {[10, 20, 30, 50, 100].map((num) => {
-                  let maxAvailable = 
+              <div className="flex flex-wrap gap-2">
+                {(() => {
+                  const totalDeckAvailable = 
                     quizMode === "sinhala_verb_japanese" || quizMode === "japanese_verb_sinhala" 
                       ? verbsList.length 
                       : quizMode === "sinhala_adj_japanese" || quizMode === "japanese_adj_sinhala"
                       ? adjectivesList.length
                       : quizMode === "counting_system"
-                      ? 100
+                      ? preloadedCounters.length
                       : kanjiCards.length;
-                  if (num > maxAvailable) return null;
 
                   return (
-                    <button
-                      key={num}
-                      type="button"
-                      onClick={() => setQuestionCount(num)}
-                      className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all duration-150 border ${
-                        questionCount === num
-                          ? "bg-[#354f52] text-white border-[#354f52] shadow-xs"
-                          : "bg-[#fdfbf7] text-[#52796f] border-[#e9e2d7] hover:bg-[#f0ede6]"
-                      }`}
-                    >
-                      {num}
-                    </button>
+                    <>
+                      {[10, 20, 30, 50, 100].map((num) => {
+                        if (num > totalDeckAvailable) return null;
+                        return (
+                          <button
+                            key={num}
+                            type="button"
+                            onClick={() => setQuestionCount(num)}
+                            className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all duration-150 border cursor-pointer ${
+                              questionCount === num
+                                ? "bg-[#354f52] text-white border-[#354f52] shadow-xs"
+                                : "bg-[#fdfbf7] text-[#52796f] border-[#e9e2d7] hover:bg-[#f0ede6]"
+                            }`}
+                          >
+                            {num}
+                          </button>
+                        );
+                      })}
+
+                      {/* ALL Option */}
+                      <button
+                        type="button"
+                        onClick={() => setQuestionCount("ALL")}
+                        className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all duration-150 border cursor-pointer flex items-center gap-1.5 ${
+                          questionCount === "ALL"
+                            ? "bg-[#bc6c25] text-white border-[#bc6c25] shadow-xs font-black"
+                            : "bg-[#ece2d0]/50 text-[#bc6c25] border-[#e9e2d7] hover:bg-[#ece2d0]"
+                        }`}
+                      >
+                        <Sparkles className="w-3.5 h-3.5" /> ALL - සියල්ල ({totalDeckAvailable})
+                      </button>
+                    </>
                   );
-                })}
+                })()}
               </div>
+            </div>
+
+            {/* Time limit choice */}
+            <div className="space-y-3.5">
+              <h3 className="text-xs font-extrabold text-[#52796f] uppercase tracking-wider flex items-center gap-1.5">
+                <Clock className="w-4 h-4 text-[#bc6c25]" /> කාල සීමාව තෝරන්න (Select Time Limit)
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { label: "NO (කාල සීමාවක් නැත)", value: 0 },
+                  { label: "1 min", value: 60 },
+                  { label: "3 min", value: 180 },
+                  { label: "5 min", value: 300 },
+                  { label: "10 min", value: 600 },
+                  { label: "15 min", value: 900 },
+                  { label: "20 min", value: 1200 },
+                  { label: "30 min", value: 1800 },
+                ].map((t) => (
+                  <button
+                    key={t.value}
+                    type="button"
+                    onClick={() => setTimeLimit(t.value)}
+                    className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-150 border cursor-pointer ${
+                      timeLimit === t.value
+                        ? "bg-[#354f52] text-white border-[#354f52] shadow-xs font-black"
+                        : "bg-[#fdfbf7] text-[#52796f] border-[#e9e2d7] hover:bg-[#f0ede6]"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              {timeLimit > 0 && (
+                <p className="text-[11px] text-[#bc6c25] font-semibold bg-[#ece2d0]/40 p-2.5 rounded-xl border border-[#ece2d0] flex items-center gap-1.5">
+                  <Timer className="w-3.5 h-3.5 shrink-0" />
+                  තෝරාගත් කාලය ({timeLimit / 60} min) අවසන් වූ පසු ප්‍රශ්නාවලිය ස්වයංක්‍රීයව Submit වී ලකුණු පෙන්වනු ඇත. කාලයට පෙරද submit කළ හැක.
+                </p>
+              )}
             </div>
 
             {/* Action buttons */}
@@ -1911,33 +2001,62 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
             className="max-w-xl mx-auto space-y-6"
           >
             {/* Top Bar metrics */}
-            <div className="bg-white p-4 px-5 rounded-2xl border border-[#e9e2d7] flex items-center justify-between shadow-xs">
-              <div className="flex items-center gap-3">
+            <div className="bg-white p-4 px-5 rounded-2xl border border-[#e9e2d7] flex flex-wrap items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center gap-2">
                 <span className="text-xs font-extrabold text-[#52796f] bg-[#f0ede6] px-3 py-1 rounded-lg">
                   Q: {currentIdx + 1} / {questions.length}
                 </span>
                 
                 {streak >= 3 && (
-                  <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#ece2d0]/60 border border-[#bc6c25]/30 text-xs font-black text-[#bc6c25] animate-bounce">
-                    <Flame className="w-3.5 h-3.5 fill-[#bc6c25]" /> {streak} STREAK
+                  <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[#ece2d0]/60 border border-[#bc6c25]/30 text-xs font-black text-[#bc6c25] animate-bounce">
+                    <Flame className="w-3.5 h-3.5 fill-[#bc6c25]" /> {streak}
                   </span>
                 )}
               </div>
 
-              <div className="flex items-center gap-3 font-mono">
-                {/* Sound toggle button */}
+              {/* Timer & Controls */}
+              <div className="flex items-center gap-2.5">
+                {timeLimit > 0 && (
+                  <div className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-mono font-black border transition-colors ${
+                    timeLeft <= 10 
+                      ? "bg-rose-500 text-white border-rose-600 animate-pulse" 
+                      : timeLeft <= 30
+                      ? "bg-[#bc6c25] text-white border-[#bc6c25]"
+                      : "bg-[#f0ede6] text-[#354f52] border-[#e9e2d7]"
+                  }`}>
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>{formatTime(timeLeft)}</span>
+                  </div>
+                )}
+
                 <button
                   type="button"
-                  onClick={() => setSoundEnabled(!soundEnabled)}
-                  className="p-1 px-1.5 bg-[#f0ede6] hover:bg-[#e9e2d7] rounded-lg text-[#52796f] transition-colors"
-                  title={soundEnabled ? "Mute Pronunciation" : "Enable Pronunciation"}
+                  onClick={() => {
+                    if (window.confirm("දැනට කර ඇති ප්‍රමාණය Submit කිරීමට අවශ්‍යද? (Submit quiz now with answered questions?)")) {
+                      setGameState("summary");
+                    }
+                  }}
+                  className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-[#bc6c25] border border-[#ece2d0] rounded-lg text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+                  title="Submit early with answered questions"
                 >
-                  {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Submit Early
                 </button>
 
-                <div className="text-right text-xs">
-                  <span className="text-slate-400 block font-bold text-[10px]">CURRENT SCORE</span>
-                  <span className="font-extrabold text-[#354f52]">{score} correct</span>
+                <div className="flex items-center gap-2 font-mono">
+                  {/* Sound toggle button */}
+                  <button
+                    type="button"
+                    onClick={() => setSoundEnabled(!soundEnabled)}
+                    className="p-1 px-1.5 bg-[#f0ede6] hover:bg-[#e9e2d7] rounded-lg text-[#52796f] transition-colors cursor-pointer"
+                    title={soundEnabled ? "Mute Pronunciation" : "Enable Pronunciation"}
+                  >
+                    {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                  </button>
+
+                  <div className="text-right text-xs">
+                    <span className="text-slate-400 block font-bold text-[9px]">SCORE</span>
+                    <span className="font-extrabold text-[#354f52]">{score}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2091,6 +2210,21 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
             animate={{ opacity: 1, scale: 1 }}
             className="max-w-3xl mx-auto space-y-6"
           >
+            {/* Timer Status Notification Banner */}
+            {isTimeExpired ? (
+              <div className="bg-rose-50 border-2 border-rose-200 text-rose-800 p-4 rounded-2xl text-xs font-bold text-center flex items-center justify-center gap-2 shadow-xs">
+                <Clock className="w-5 h-5 text-rose-600 shrink-0" />
+                <span>⏱️ කාලය අවසන් විය! (Time expired!) ඔබ ලබා දී ඇති පිළිතුරු ස්වයංක්‍රීයව Submit විය.</span>
+              </div>
+            ) : (
+              timeLimit > 0 && (
+                <div className="bg-emerald-50 border-2 border-emerald-200 text-emerald-800 p-3.5 rounded-2xl text-xs font-bold text-center flex items-center justify-center gap-2 shadow-xs">
+                  <Timer className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>⏱️ කාල සීමාව අවසන් වීමට පෙර සාර්ථකව අවසන් කරන ලදී! (Remaining time: {formatTime(timeLeft)})</span>
+                </div>
+              )
+            )}
+
             {/* Top Score Overview Card */}
             <div className="bg-white p-8 rounded-[32px] border border-[#e9e2d7] shadow-sm text-center relative overflow-hidden">
               <div className="absolute inset-0 bg-[#cad2c5]/10 animate-pulse pointer-events-none"></div>
@@ -2107,6 +2241,9 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
                   <h2 className="text-3xl font-black text-[#354f52]">
                     Course Score: {score} / {questions.length}
                   </h2>
+                  <p className="text-xs text-slate-500 font-bold">
+                    පිළිතුරු සපයන ලද ප්‍රශ්න ගණන: {history.length} / {questions.length}
+                  </p>
                 </div>
 
                 {/* Score Ratio Gauge */}

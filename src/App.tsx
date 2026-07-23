@@ -34,10 +34,11 @@ import {
   Users,
   Hash,
   Volume2,
-  VolumeX
+  VolumeX,
+  Link
 } from "lucide-react";
 import { PRELOADED_KANJI, KanjiCard } from "./data/preloadedKanji";
-import { LearningStatus, UserProgress } from "./types";
+import { LearningStatus, UserProgress, JFTGrammar, JFTConjunction } from "./types";
 import KanjiCardView from "./components/KanjiCardView";
 import { PRELOADED_VERBS, JFTVerb } from "./data/preloadedVerbs";
 import VerbCardView from "./components/VerbCardView";
@@ -45,8 +46,9 @@ import { PRELOADED_ADJECTIVES, JFTAdjective } from "./data/preloadedAdjectives";
 import AdjectiveCardView from "./components/AdjectiveCardView";
 import QuizView from "./components/QuizView";
 import { PRELOADED_GRAMMAR } from "./data/preloadedGrammar";
-import { JFTGrammar } from "./types";
 import GrammarCardView from "./components/GrammarCardView";
+import { PRELOADED_CONJUNCTIONS } from "./data/preloadedConjunctions";
+import ConjunctionCardView from "./components/ConjunctionCardView";
 import DictionaryView from "./components/DictionaryView";
 import StatisticsView from "./components/StatisticsView";
 import AlphabetView from "./components/AlphabetView";
@@ -86,7 +88,7 @@ function getKanjiForm(num: number, counterChar: string): string {
 
 export default function App() {
   // Navigation tabs
-  const [activeTab, setActiveTab] = useState<"alphabet" | "learn" | "test" | "verbs" | "adjectives" | "grammar" | "quiz" | "dictionary" | "stats" | "counters" | "profile">(() => {
+  const [activeTab, setActiveTab] = useState<"alphabet" | "learn" | "test" | "verbs" | "adjectives" | "counters" | "conjunctions" | "grammar" | "quiz" | "dictionary" | "stats" | "profile">(() => {
     const saved = localStorage.getItem("jft_active_tab");
     return (saved as any) || "alphabet";
   });
@@ -349,6 +351,22 @@ export default function App() {
   const [grammarSearchQuery, setGrammarSearchQuery] = useState("");
   const [activeGrammarFilter, setActiveGrammarFilter] = useState<"ALL" | "NOT_YET" | "OK">("ALL");
 
+  // JFT Conjunctions State
+  const [conjunctionsList] = useState<JFTConjunction[]>(PRELOADED_CONJUNCTIONS);
+  const [conjunctionsProgress, setConjunctionsProgress] = useState<UserProgress>(() => {
+    const saved = localStorage.getItem("jft_conjunctions_progress");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return {};
+  });
+
+  const [conjunctionsSearchQuery, setConjunctionsSearchQuery] = useState("");
+  const [activeConjunctionsFilter, setActiveConjunctionsFilter] = useState<"ALL" | "NOT_YET" | "OK">("ALL");
+  const [activeConjunctionCategoryFilter, setActiveConjunctionCategoryFilter] = useState<string>("ALL");
+
   useEffect(() => {
     setVisibleKanjiCount(16);
   }, [searchQuery, activeFilter, activeTab]);
@@ -377,6 +395,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("jft_grammar_progress", JSON.stringify(grammarProgress));
   }, [grammarProgress]);
+
+  useEffect(() => {
+    localStorage.setItem("jft_conjunctions_progress", JSON.stringify(conjunctionsProgress));
+  }, [conjunctionsProgress]);
 
   useEffect(() => {
     localStorage.setItem("jft_counters_progress", JSON.stringify(countersProgress));
@@ -977,6 +999,7 @@ export default function App() {
     vProgress = verbsProgress,
     aProgress = adjectivesProgress,
     gProgress = grammarProgress,
+    conjProgress = conjunctionsProgress,
     cProgress = countersProgress
   ) => {
     if (!profile) return;
@@ -984,8 +1007,9 @@ export default function App() {
     const vCount = Object.values(vProgress).filter((s) => s === "OK").length;
     const aCount = Object.values(aProgress).filter((s) => s === "OK").length;
     const gCount = Object.values(gProgress).filter((s) => s === "OK").length;
+    const conjCount = Object.values(conjProgress).filter((s) => s === "OK").length;
     const cCount = Object.values(cProgress).filter((s) => s === "OK").length;
-    const total = kCount + vCount + aCount + gCount + cCount;
+    const total = kCount + vCount + aCount + gCount + conjCount + cCount;
 
     // Update local list
     const localList = getLocalLeaderboard();
@@ -1000,6 +1024,7 @@ export default function App() {
       verbsProgress: vCount,
       adjectivesProgress: aCount,
       grammarProgress: gCount,
+      conjunctionsProgress: conjCount,
       countersProgress: cCount,
       totalProgress: total,
       joinedAt: profile.joinedAt || new Date().toISOString()
@@ -1023,11 +1048,13 @@ export default function App() {
           verbsProgress: vCount,
           adjectivesProgress: aCount,
           grammarProgress: gCount,
+          conjunctionsProgress: conjCount,
           countersProgress: cCount,
           kanjiProgressMap: kanjis,
           verbsProgressMap: vProgress,
           adjectivesProgressMap: aProgress,
           grammarProgressMap: gProgress,
+          conjunctionsProgressMap: conjProgress,
           countersProgressMap: cProgress
         }),
       });
@@ -1092,7 +1119,7 @@ export default function App() {
       }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [progress, verbsProgress, adjectivesProgress, grammarProgress, countersProgress]);
+  }, [progress, verbsProgress, adjectivesProgress, grammarProgress, conjunctionsProgress, countersProgress]);
 
   // Export full study records to a backup file
   const downloadProgressJSON = () => {
@@ -1105,6 +1132,8 @@ export default function App() {
         verbsProgress,
         adjectivesProgress,
         grammarProgress,
+        conjunctionsProgress,
+        countersProgress,
         srsRecords,
         cards,
       };
@@ -1140,6 +1169,8 @@ export default function App() {
         if (backup.verbsProgress) setVerbsProgress(backup.verbsProgress);
         if (backup.adjectivesProgress) setAdjectivesProgress(backup.adjectivesProgress);
         if (backup.grammarProgress) setGrammarProgress(backup.grammarProgress);
+        if (backup.conjunctionsProgress) setConjunctionsProgress(backup.conjunctionsProgress);
+        if (backup.countersProgress) setCountersProgress(backup.countersProgress);
         if (backup.srsRecords) setSrsRecords(backup.srsRecords);
         if (backup.cards) setCards(backup.cards);
 
@@ -1151,7 +1182,9 @@ export default function App() {
             backup.progress || {},
             backup.verbsProgress || {},
             backup.adjectivesProgress || {},
-            backup.grammarProgress || {}
+            backup.grammarProgress || {},
+            backup.conjunctionsProgress || {},
+            backup.countersProgress || {}
           );
         }
       } catch (err) {
@@ -1266,6 +1299,23 @@ export default function App() {
     if (window.confirm("සැබවින්ම ව්‍යාකරණ ප්‍රගති දත්ත මකාදමා නැවත මුල සිට ආරම්භ කිරීමට අවශ්‍ය ද? Reset grammar learning progress data?")) {
       setGrammarProgress({});
       localStorage.removeItem("jft_grammar_progress");
+    }
+  };
+
+  // Update a conjunction progress status
+  const handleUpdateConjunctionStatus = (conjId: string, status: LearningStatus) => {
+    setConjunctionsProgress((prev) => ({
+      ...prev,
+      [conjId]: status,
+    }));
+    recordStudyActivity();
+  };
+
+  // Reset conjunctions learning progress
+  const handleResetConjunctionsProgress = () => {
+    if (window.confirm("සැබවින්ම සම්බන්ධක පද ප්‍රගති දත්ත මකාදමා නැවත මුල සිට ආරම්භ කිරීමට අවශ්‍ය ද? Reset conjunctions learning progress data?")) {
+      setConjunctionsProgress({});
+      localStorage.removeItem("jft_conjunctions_progress");
     }
   };
 
@@ -1507,6 +1557,39 @@ export default function App() {
       return matchesFilter && matchesSearch;
     });
   }, [grammarList, grammarProgress, activeGrammarFilter, grammarSearchQuery]);
+
+  // Conjunctions scores/ratios and filtering (optimized via useMemo)
+  const { okConjunctionsCount, notYetConjunctionsCount, percentConjunctionsComplete } = useMemo(() => {
+    const ok = conjunctionsList.reduce((sum, c) => (conjunctionsProgress[c.id] === "OK" ? sum + 1 : sum), 0);
+    const notYet = conjunctionsList.reduce((sum, c) => (conjunctionsProgress[c.id] === "NOT_YET" ? sum + 1 : sum), 0);
+    const percent = conjunctionsList.length > 0 ? Math.round((ok / conjunctionsList.length) * 100) : 0;
+    return { okConjunctionsCount: ok, notYetConjunctionsCount: notYet, percentConjunctionsComplete: percent };
+  }, [conjunctionsList, conjunctionsProgress]);
+
+  const filteredConjunctions = useMemo(() => {
+    return conjunctionsList.filter((c) => {
+      const cardStatus = conjunctionsProgress[c.id] || "UNSTUDIED";
+      const matchesFilter =
+        activeConjunctionsFilter === "ALL" ||
+        (activeConjunctionsFilter === "NOT_YET" && cardStatus === "NOT_YET") ||
+        (activeConjunctionsFilter === "OK" && cardStatus === "OK");
+
+      const matchesTag =
+        activeConjunctionCategoryFilter === "ALL" || c.categoryTag === activeConjunctionCategoryFilter;
+
+      const query = conjunctionsSearchQuery.toLowerCase().trim();
+      const matchesSearch =
+        !query ||
+        c.index.toLowerCase().includes(query) ||
+        c.title.toLowerCase().includes(query) ||
+        c.romaji.toLowerCase().includes(query) ||
+        c.sinhalaMeaning.toLowerCase().includes(query) ||
+        c.englishMeaning.toLowerCase().includes(query) ||
+        c.categoryTag.toLowerCase().includes(query);
+
+      return matchesFilter && matchesTag && matchesSearch;
+    });
+  }, [conjunctionsList, conjunctionsProgress, activeConjunctionsFilter, activeConjunctionCategoryFilter, conjunctionsSearchQuery]);
 
   // Counters scores/ratios and filtering (optimized via useMemo)
   const { okCountersCount, notYetCountersCount, percentCountersComplete } = useMemo(() => {
@@ -1933,7 +2016,7 @@ export default function App() {
             </div>
 
             {/* Switcher Grid: hidden on mobile by default unless isMobileMenuOpen is true */}
-            <div className={`${isMobileMenuOpen ? "grid" : "hidden md:grid"} grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-2 bg-[#faf8f5] border border-[#e9e2d7]/80 p-2 rounded-2xl w-full shadow-3xs transition-all duration-300`}>
+            <div className={`${isMobileMenuOpen ? "grid" : "hidden md:grid"} grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-10 gap-2 bg-[#faf8f5] border border-[#e9e2d7]/80 p-2 rounded-2xl w-full shadow-3xs transition-all duration-300`}>
               
               {/* Tab 1: Alphabet */}
               <button
@@ -2014,6 +2097,22 @@ export default function App() {
                 }`}
               >
                 <Hash className={`w-4 h-4 ${activeTab === "counters" ? "text-white animate-pulse" : "text-[#bc6c25]"}`} /> Counters
+              </button>
+
+              {/* Tab 5.8: Conjunctions (සම්බන්ධක) */}
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab("conjunctions");
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`px-3 py-3 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
+                  activeTab === "conjunctions"
+                    ? "bg-[#52796f] text-white shadow-md border-0 ring-4 ring-[#52796f]/15"
+                    : "text-[#354f52] hover:bg-white hover:text-[#bc6c25] border border-[#e9e2d7]/50"
+                }`}
+              >
+                <Link className={`w-4 h-4 ${activeTab === "conjunctions" ? "text-white animate-pulse" : "text-[#bc6c25]"}`} /> Conjunctions
               </button>
 
               {/* Tab 6: Grammar (ව්‍යාකරණ) */}
@@ -3632,6 +3731,201 @@ export default function App() {
           </div>
         )}
 
+        {/* TAB 3.8: CONJUNCTIONS TAB */}
+        {activeTab === "conjunctions" && (
+          <div className="space-y-6" id="tab-panel-conjunctions">
+            <div className="space-y-6" id="jft-conjunctions-section">
+              
+              {/* Conjunctions Stats Metrics Row */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+                
+                {/* Box 1: Conjunctions Study Stats Card */}
+                <div className="lg:col-span-8 bg-white border border-[#e9e2d7] p-6 rounded-[28px] shadow-sm flex flex-col justify-between" id="conjunctions-stats-card">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black bg-[#bc6c25]/15 text-[#bc6c25]">
+                        🔗 JFT-BASIC A2 COMPLETE CONJUNCTIONS GUIDE
+                      </span>
+                      <h3 className="text-lg font-black text-[#354f52]">
+                        සම්බන්ධක පද අධ්‍යයන ප්‍රගතිය (Japanese Conjunctions Tracker)
+                      </h3>
+                      <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                        JFT-Basic / JLPT N5 & N4 විභාගවල අඩංගු ප්‍රධානතම සම්බන්ධක පද (接続詞 - Setsuzokushi) 41ම මෙහි අධ්‍යයනය කළ හැක.
+                      </p>
+                    </div>
+                    
+                    {/* Circular Percent tracker count */}
+                    <div className="bg-[#fcfaf2] border border-[#e9e2d7] p-4 rounded-2xl text-center shrink-0 min-w-[120px]">
+                      <span className="text-[9px] font-black text-slate-400 block tracking-wider uppercase">MASTERY</span>
+                      <span className="text-2xl font-black text-[#bc6c25] leading-none block my-1">
+                        {percentConjunctionsComplete}%
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-bold">Completed OK</span>
+                    </div>
+                  </div>
+
+                  {/* Progress bar and metrics indicators */}
+                  <div className="space-y-3 mt-6 border-t border-[#f0ede6] pt-4">
+                    <div className="w-full bg-[#f0ede6] rounded-full h-3 overflow-hidden">
+                      <div
+                        className="bg-[#bc6c25] h-full rounded-full transition-all duration-500"
+                        style={{ width: `${percentConjunctionsComplete}%` }}
+                      ></div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 text-center pt-1 text-xs">
+                      <div className="p-2 bg-slate-50 border border-slate-100 rounded-xl">
+                        <span className="text-[9px] font-bold text-[#84a98c] block uppercase">OK</span>
+                        <span className="text-sm font-extrabold text-[#52796f]">✔️ {okConjunctionsCount}</span>
+                      </div>
+                      <div className="p-2 bg-[#ece2d0]/30 border border-[#ece2d0]/50 rounded-xl">
+                        <span className="text-[9px] font-bold text-[#bc6c25] block uppercase">NOT YET</span>
+                        <span className="text-sm font-extrabold text-[#bc6c25]">❌ {notYetConjunctionsCount}</span>
+                      </div>
+                      <div className="p-2 bg-slate-50 border border-slate-100 rounded-xl">
+                        <span className="text-[9px] font-bold text-[#84a98c] block uppercase">TOTAL ITEMS (මුළු එකතුව)</span>
+                        <span className="text-sm font-extrabold text-[#354f52]">🔗 {conjunctionsList.length}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Box 2: Actions & Settings */}
+                <div className="lg:col-span-4 bg-[#ece2d0]/25 border border-[#e9e2d7] p-6 rounded-[28px] shadow-sm flex flex-col justify-between" id="conjunctions-config-card">
+                  <div>
+                    <h4 className="font-display font-bold text-xs text-[#bc6c25] uppercase tracking-widest flex items-center gap-1.5">
+                      ⚙️ Conjunctions Guide
+                    </h4>
+                    <p className="text-xs text-[#2f3e46] mt-1.5 leading-relaxed font-semibold">
+                      සෑම සම්බන්ධක පද කාඩ්පතක්ම Tap කර අර්ථය, උදාහරණ වාක්‍ය සහ හඬ උච්චාරණය (Voice Audio) අධ්‍යයනය කරන්න.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 mt-4">
+                    <button
+                      type="button"
+                      onClick={handleResetConjunctionsProgress}
+                      className="w-full py-2.5 bg-white border border-[#bc6c25] hover:bg-[#fdfbf7] rounded-xl text-xs font-bold text-[#bc6c25] transition shadow-xs cursor-pointer"
+                    >
+                      🧹 Clear Conjunctions Progress
+                    </button>
+                    <div className="p-3 bg-white border border-[#e9e2d7] rounded-xl text-[10px] text-slate-500 font-semibold leading-relaxed">
+                      💡 Click the speaker button inside any card to hear standard Japanese pronunciation.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Filters & Search Row */}
+              <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 p-5 bg-white rounded-[24px] border border-[#e9e2d7] shadow-sm" id="conjunctions-controls-row">
+                
+                {/* Category Tags Filter */}
+                <div className="flex flex-col gap-1.5 shrink-0">
+                  <span className="text-[10px] font-bold text-[#84a98c] uppercase tracking-wider">
+                    Level / Category Filter
+                  </span>
+                  <div className="flex flex-wrap items-center gap-1 bg-[#f0ede6] p-1 rounded-xl border border-[#e9e2d7]">
+                    {["ALL", "JFT / N5", "JFT / N4", "JFT Core", "JFT Extra"].map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => setActiveConjunctionCategoryFilter(tag)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 cursor-pointer ${
+                          activeConjunctionCategoryFilter === tag
+                            ? "bg-white text-[#bc6c25] shadow-xs font-black"
+                            : "text-[#84a98c] hover:text-[#354f52]"
+                        }`}
+                      >
+                        {tag === "ALL" ? "All Tags (සියල්ල)" : tag}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Status Filter */}
+                <div className="flex flex-col gap-1.5 shrink-0">
+                  <span className="text-[10px] font-bold text-[#84a98c] uppercase tracking-wider">
+                    Status Filter
+                  </span>
+                  <div className="flex items-center gap-1 bg-[#f0ede6] p-1 rounded-xl border border-[#e9e2d7]">
+                    <button
+                      type="button"
+                      onClick={() => setActiveConjunctionsFilter("ALL")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 cursor-pointer ${
+                        activeConjunctionsFilter === "ALL"
+                          ? "bg-white text-[#52796f] shadow-xs font-black"
+                          : "text-[#84a98c] hover:text-[#52796f]"
+                      }`}
+                    >
+                      📖 All ({conjunctionsList.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveConjunctionsFilter("NOT_YET")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 cursor-pointer ${
+                        activeConjunctionsFilter === "NOT_YET"
+                          ? "bg-white text-[#bc6c25] shadow-xs font-black"
+                          : "text-[#84a98c] hover:text-[#bc6c25]"
+                      }`}
+                    >
+                      ❌ Not Yet ({notYetConjunctionsCount})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveConjunctionsFilter("OK")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 cursor-pointer ${
+                        activeConjunctionsFilter === "OK"
+                          ? "bg-white text-[#52796f] shadow-xs font-black"
+                          : "text-[#84a98c] hover:text-[#52796f]"
+                      }`}
+                    >
+                      ✔️ OK ({okConjunctionsCount})
+                    </button>
+                  </div>
+                </div>
+
+                {/* Search Box */}
+                <div className="flex flex-col gap-1.5 flex-1 max-w-sm">
+                  <span className="text-[10px] font-bold text-[#84a98c] uppercase tracking-wider">
+                    Search Conjunctions (සම්බන්ධක සොයන්න)
+                  </span>
+                  <div className="relative">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#84a98c]" />
+                    <input
+                      type="text"
+                      value={conjunctionsSearchQuery}
+                      onChange={(e) => setConjunctionsSearchQuery(e.target.value)}
+                      placeholder="සොයන්න (e.g. そして, Soshite, නිසා, But...)"
+                      className="w-full text-xs rounded-xl border border-[#e9e2d7] pl-10 pr-4 py-2.5 bg-[#fdfbf7] focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#bc6c25]/15 focus:border-[#bc6c25]"
+                    />
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Conjunctions Deck Grid/List */}
+              {filteredConjunctions.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-5xl mx-auto" id="conjunctions-deck-layout">
+                  {filteredConjunctions.map((conj) => (
+                    <ConjunctionCardView
+                      key={conj.id}
+                      conjunction={conj}
+                      status={conjunctionsProgress[conj.id] || "UNSTUDIED"}
+                      onStatusChange={(status) => handleUpdateConjunctionStatus(conj.id, status)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="p-12 text-center bg-white rounded-2xl border border-[#e9e2d7] shadow-sm" id="conjunctions-empty-state">
+                  <p className="text-sm font-semibold text-slate-400">සම්බන්ධක පද කිසිවක් හමු නොවීය.</p>
+                  <p className="text-xs text-slate-300 mt-1">සෙවුම් පද හෝ පෙරහන් වෙනස් කර බලන්න.</p>
+                </div>
+              )}
+
+            </div>
+          </div>
+        )}
+
         {/* TAB 4: STUDY GRAMMAR PATTERNS */}
         {activeTab === "grammar" && (
           <div className="space-y-6" id="tab-panel-grammar">
@@ -3831,6 +4125,8 @@ export default function App() {
               adjectivesProgress={adjectivesProgress}
               grammarList={grammarList}
               grammarProgress={grammarProgress}
+              conjunctionsList={conjunctionsList}
+              conjunctionsProgress={conjunctionsProgress}
               countersProgress={countersProgress}
               onClearProgress={(category) => {
                 if (category === "kanji" || category === "all") {
@@ -3848,6 +4144,10 @@ export default function App() {
                 if (category === "grammar" || category === "all") {
                   setGrammarProgress({});
                   localStorage.removeItem("jft_grammar_progress");
+                }
+                if (category === "conjunctions" || category === "all") {
+                  setConjunctionsProgress({});
+                  localStorage.removeItem("jft_conjunctions_progress");
                 }
                 if (category === "counters" || category === "all") {
                   setCountersProgress({});

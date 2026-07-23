@@ -30,10 +30,11 @@ import {
   Sparkles,
   RefreshCw
 } from "lucide-react";
-import { KanjiCard, JFTGrammar, UserProgress } from "../types";
+import { KanjiCard, JFTGrammar, JFTConjunction, UserProgress } from "../types";
 import { JFTVerb } from "../data/preloadedVerbs";
 import { JFTAdjective } from "../data/preloadedAdjectives";
 import { preloadedCounters, CounterItem } from "../data/preloadedCounters";
+import { PRELOADED_CONJUNCTIONS } from "../data/preloadedConjunctions";
 
 interface StatisticsViewProps {
   kanjiCards: KanjiCard[];
@@ -44,8 +45,10 @@ interface StatisticsViewProps {
   adjectivesProgress: UserProgress;
   grammarList: JFTGrammar[];
   grammarProgress: UserProgress;
+  conjunctionsList?: JFTConjunction[];
+  conjunctionsProgress?: UserProgress;
   countersProgress: UserProgress;
-  onClearProgress?: (category: "kanji" | "verbs" | "adjectives" | "grammar" | "counters" | "all") => void;
+  onClearProgress?: (category: "kanji" | "verbs" | "adjectives" | "grammar" | "conjunctions" | "counters" | "all") => void;
 }
 
 export default function StatisticsView({
@@ -57,12 +60,14 @@ export default function StatisticsView({
   adjectivesProgress,
   grammarList,
   grammarProgress,
+  conjunctionsList = PRELOADED_CONJUNCTIONS,
+  conjunctionsProgress = {},
   countersProgress,
   onClearProgress
 }: StatisticsViewProps) {
   // Safe Double confirmation layout state
   const [confirmState, setConfirmState] = useState<{
-    category: "kanji" | "verbs" | "adjectives" | "grammar" | "counters" | "all" | null;
+    category: "kanji" | "verbs" | "adjectives" | "grammar" | "conjunctions" | "counters" | "all" | null;
     step: 0 | 1 | 2;
   }>({ category: null, step: 0 });
 
@@ -189,6 +194,17 @@ export default function StatisticsView({
     });
     const unstudiedGrammar = Math.max(0, totalGrammar - okGrammar - notYetGrammar);
 
+    // Conjunctions
+    const totalConjunctions = conjunctionsList.length;
+    let okConjunctions = 0;
+    let notYetConjunctions = 0;
+    conjunctionsList.forEach(c => {
+      const p = conjunctionsProgress[c.id];
+      if (p === "OK") okConjunctions++;
+      else if (p === "NOT_YET") notYetConjunctions++;
+    });
+    const unstudiedConjunctions = Math.max(0, totalConjunctions - okConjunctions - notYetConjunctions);
+
     // Counters
     const totalCounters = preloadedCounters.length;
     let okCounters = 0;
@@ -201,8 +217,8 @@ export default function StatisticsView({
     const unstudiedCounters = Math.max(0, totalCounters - okCounters - notYetCounters);
 
     // Total masteries
-    const totalItems = totalKanji + totalVerbs + totalAdjectives + totalGrammar + totalCounters;
-    const totalOk = okKanji + okVerbs + okAdjectives + okGrammar + okCounters;
+    const totalItems = totalKanji + totalVerbs + totalAdjectives + totalGrammar + totalConjunctions + totalCounters;
+    const totalOk = okKanji + okVerbs + okAdjectives + okGrammar + okConjunctions + okCounters;
     const overallPercentage = totalItems > 0 ? Math.round((totalOk / totalItems) * 100) : 0;
 
     return {
@@ -210,6 +226,7 @@ export default function StatisticsView({
       verbs: { total: totalVerbs, ok: okVerbs, notYet: notYetVerbs, unstudied: unstudiedVerbs, pct: totalVerbs > 0 ? Math.round((okVerbs / totalVerbs) * 100) : 0 },
       adjectives: { total: totalAdjectives, ok: okAdjectives, notYet: notYetAdjectives, unstudied: unstudiedAdjectives, pct: totalAdjectives > 0 ? Math.round((okAdjectives / totalAdjectives) * 100) : 0 },
       grammar: { total: totalGrammar, ok: okGrammar, notYet: notYetGrammar, unstudied: unstudiedGrammar, pct: totalGrammar > 0 ? Math.round((okGrammar / totalGrammar) * 100) : 0 },
+      conjunctions: { total: totalConjunctions, ok: okConjunctions, notYet: notYetConjunctions, unstudied: unstudiedConjunctions, pct: totalConjunctions > 0 ? Math.round((okConjunctions / totalConjunctions) * 100) : 0 },
       counters: { total: totalCounters, ok: okCounters, notYet: notYetCounters, unstudied: unstudiedCounters, pct: totalCounters > 0 ? Math.round((okCounters / totalCounters) * 100) : 0 },
       overall: { total: totalItems, ok: totalOk, pct: overallPercentage }
     };
@@ -222,6 +239,8 @@ export default function StatisticsView({
     adjectivesProgress,
     grammarList,
     grammarProgress,
+    conjunctionsList,
+    conjunctionsProgress,
     countersProgress
   ]);
 
@@ -245,6 +264,12 @@ export default function StatisticsView({
         "Mastered (OK)": stats.adjectives.ok,
         "Needs Practice (Not Yet)": stats.adjectives.notYet,
         "Unstudied (නොඉගෙනගත්)": stats.adjectives.unstudied
+      },
+      {
+        name: "Conjunctions (සම්බන්ධක)",
+        "Mastered (OK)": stats.conjunctions.ok,
+        "Needs Practice (Not Yet)": stats.conjunctions.notYet,
+        "Unstudied (නොඉගෙනගත්)": stats.conjunctions.unstudied
       },
       {
         name: "Grammar (ව්‍යාකරණ)",

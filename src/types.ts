@@ -8,6 +8,22 @@ export interface KanjiCard {
   englishMeaning: string;
 }
 
+export interface JFTConjunction {
+  id: string;
+  index: string;
+  title: string;
+  romaji: string;
+  categoryTag: string;
+  sinhalaMeaning: string;
+  englishMeaning: string;
+  explanationSinhala?: string;
+  examples: Array<{
+    japanese: string;
+    hiragana: string;
+    sinhala: string;
+  }>;
+}
+
 export interface JFTGrammar {
   id: string;
   index: string;
