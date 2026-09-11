@@ -1,6 +1,6 @@
 {
   "name": "JFT & N4 Learning Helper",
-  "description": "Learn and test JFT-Basic Japanese Kanji with Sinhala & English translations, okurigana support, card tracking, and shuffle practice.",
+  "description": "Learn and test JFT-Basic Japanese Kanji, verbs, grammar, SSW Tokutei Ginou Skill Assessment Tests, and interactive Samurai Dojo combat & Kanji Slasher games.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

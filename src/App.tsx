@@ -35,7 +35,9 @@ import {
   Hash,
   Volume2,
   VolumeX,
-  Link
+  Link,
+  Wheat,
+  Gamepad2
 } from "lucide-react";
 import { PRELOADED_KANJI, KanjiCard } from "./data/preloadedKanji";
 import { LearningStatus, UserProgress, JFTGrammar, JFTConjunction } from "./types";
@@ -52,6 +54,9 @@ import ConjunctionCardView from "./components/ConjunctionCardView";
 import DictionaryView from "./components/DictionaryView";
 import StatisticsView from "./components/StatisticsView";
 import AlphabetView from "./components/AlphabetView";
+import { SkillTestsView } from "./components/SkillTestsView";
+import { SamuraiGameView } from "./components/SamuraiGameView";
+import { VegetableSorterGameView } from "./components/VegetableSorterGameView";
 import { preloadedCounters, CounterItem } from "./data/preloadedCounters";
 
 function toKanjiNumber(num: number): string {
@@ -88,7 +93,7 @@ function getKanjiForm(num: number, counterChar: string): string {
 
 export default function App() {
   // Navigation tabs
-  const [activeTab, setActiveTab] = useState<"alphabet" | "learn" | "test" | "verbs" | "adjectives" | "counters" | "conjunctions" | "grammar" | "quiz" | "dictionary" | "stats" | "profile">(() => {
+  const [activeTab, setActiveTab] = useState<"alphabet" | "learn" | "test" | "verbs" | "adjectives" | "counters" | "conjunctions" | "grammar" | "quiz" | "dictionary" | "stats" | "profile" | "skill_tests" | "games">(() => {
     const saved = localStorage.getItem("jft_active_tab");
     return (saved as any) || "alphabet";
   });
@@ -96,6 +101,16 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("jft_active_tab", activeTab);
   }, [activeTab]);
+
+  // Game selection: Samurai Dojo vs Kawaii Harvest Farm
+  const [selectedGame, setSelectedGame] = useState<"samurai" | "farm">(() => {
+    const savedGame = localStorage.getItem("jft_selected_game");
+    return (savedGame as "samurai" | "farm") || "samurai";
+  });
+
+  useEffect(() => {
+    localStorage.setItem("jft_selected_game", selectedGame);
+  }, [selectedGame]);
 
   // Supporting unified nested Study vs Test mode for JFT Kanji (matching Verbs/Adjectives)
   const [kanjiViewMode, setKanjiViewMode] = useState<"learn" | "test">("learn");
@@ -2016,7 +2031,7 @@ export default function App() {
             </div>
 
             {/* Switcher Grid: hidden on mobile by default unless isMobileMenuOpen is true */}
-            <div className={`${isMobileMenuOpen ? "grid" : "hidden md:grid"} grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-10 gap-2 bg-[#faf8f5] border border-[#e9e2d7]/80 p-2 rounded-2xl w-full shadow-3xs transition-all duration-300`}>
+            <div className={`${isMobileMenuOpen ? "grid" : "hidden md:grid"} grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-12 gap-2 bg-[#faf8f5] border border-[#e9e2d7]/80 p-2 rounded-2xl w-full shadow-3xs transition-all duration-300`}>
               
               {/* Tab 1: Alphabet */}
               <button
@@ -2193,6 +2208,38 @@ export default function App() {
                 }`}
               >
                 <Trophy className={`w-4 h-4 ${activeTab === "profile" ? "text-white" : "text-amber-500 animate-pulse"}`} /> Leaders
+              </button>
+
+              {/* Tab 11: Skill Tests (ජපන් නිපුණතා පරීක්ෂණ - SSW Agriculture & Available Sectors) */}
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab("skill_tests");
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`px-3 py-3 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
+                  activeTab === "skill_tests"
+                    ? "bg-[#2d6a4f] text-white shadow-md border-0 ring-4 ring-[#2d6a4f]/25"
+                    : "text-[#2d6a4f] hover:bg-white hover:text-[#1b4332] border border-emerald-300 bg-emerald-50/50"
+                }`}
+              >
+                <Wheat className={`w-4 h-4 ${activeTab === "skill_tests" ? "text-amber-300 animate-pulse" : "text-[#2d6a4f]"}`} /> Skill Tests
+              </button>
+
+              {/* Tab 12: Games & Samurai Dojo (සමුරායි සටන් ක්‍රීඩා) */}
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab("games");
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`px-3 py-3 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
+                  activeTab === "games"
+                    ? "bg-[#bc6c25] text-white shadow-md border-0 ring-4 ring-[#bc6c25]/25"
+                    : "text-[#bc6c25] hover:bg-white hover:text-[#8a4b16] border border-amber-300 bg-amber-50/50"
+                }`}
+              >
+                <Gamepad2 className={`w-4 h-4 ${activeTab === "games" ? "text-amber-200 animate-pulse" : "text-[#bc6c25]"}`} /> Games
               </button>
 
             </div>
@@ -4549,6 +4596,62 @@ export default function App() {
 
             </div>
 
+          </div>
+        )}
+
+        {/* TAB 11: SKILL TESTS (SSW Agriculture & Available Sectors) */}
+        {activeTab === "skill_tests" && (
+          <div id="tab-panel-skill-tests">
+            <SkillTestsView />
+          </div>
+        )}
+
+        {/* TAB 12: GAMES (SAMURAI DOJO & KAWAII HARVEST FARM) */}
+        {activeTab === "games" && (
+          <div id="tab-panel-games" className="space-y-4">
+            {/* Game Selector Switcher Bar */}
+            <div className="bg-white/90 backdrop-blur-md p-2.5 rounded-2xl border-2 border-[#e9dfcc] shadow-sm flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Gamepad2 className="w-5 h-5 text-[#bc6c25]" />
+                <span className="text-xs font-black text-[#2d6a4f] uppercase tracking-wider font-serif">
+                  ක්‍රීඩාව තෝරන්න (Select Game Mode):
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedGame("samurai")}
+                  className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                    selectedGame === "samurai"
+                      ? "bg-[#2d6a4f] text-white shadow-md ring-2 ring-emerald-400/40"
+                      : "bg-[#faf6ed] hover:bg-[#f3ebd9] text-slate-700 border border-[#e9dfcc]"
+                  }`}
+                >
+                  <span>⚔️ සමුරායි සටන (Samurai Dojo)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedGame("farm")}
+                  className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                    selectedGame === "farm"
+                      ? "bg-emerald-700 text-white shadow-md ring-2 ring-emerald-400/40"
+                      : "bg-[#faf6ed] hover:bg-[#f3ebd9] text-slate-700 border border-[#e9dfcc]"
+                  }`}
+                >
+                  <span>🌿 Vegetable Families (එළවළු පවුල් වර්ගීකරණය)</span>
+                  <span className="px-1.5 py-0.5 bg-amber-400 text-amber-950 text-[9px] font-black rounded-full uppercase">
+                    JA EXAM
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Active Game View */}
+            {selectedGame === "samurai" ? (
+              <SamuraiGameView />
+            ) : (
+              <VegetableSorterGameView />
+            )}
           </div>
         )}
       </main>

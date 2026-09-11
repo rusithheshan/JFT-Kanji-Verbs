@@ -82,150 +82,194 @@ export default function KanjiCardView({
 
   const isTestModeDetailsHidden = mode === "test" && !isRevealed;
 
-  // Render for testing mode: standard static layout or revealed detail
+  // Render for testing mode: 3D flip card revealing detailed translation and clipart art
   if (mode === "test") {
     return (
       <div
         id={`kanji-card-test-${card.id}`}
-        className={`relative flex flex-col justify-between w-full min-h-[490px] p-6 rounded-[32px] border-2 transition-all duration-300 shadow-sm cursor-pointer border-b-8 ${getStatusColor()}`}
+        className="perspective-1000 w-full min-h-[510px] cursor-pointer relative"
         onClick={() => {
           if (!isRevealed && onReveal) {
             onReveal();
           }
         }}
       >
-        {/* Top Banner section */}
-        <div className="flex items-center justify-between w-full border-b border-dashed border-[#e9e2d7] pb-3 mb-4">
-          <span className="font-mono text-[10px] text-[#84a98c] font-black tracking-tight uppercase">
-            ID: {card.id.split("_").pop()}
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={speakReading}
-              className="p-1 px-2 bg-[#f0ede6] text-[#354f52] rounded-xl hover:bg-[#cad2c5] transition-colors"
-              title="Pronounce"
-            >
-              <Volume2 className="w-4 h-4" />
-            </button>
-            {getStatusBadge()}
-          </div>
-        </div>
-
-        {isTestModeDetailsHidden ? (
-          <div className="flex-1 flex flex-col justify-center items-center py-6">
-            <div className="relative mb-6">
-              <div className="absolute inset-0 bg-[#cad2c5] rounded-full blur-2xl opacity-40 scale-150 animate-pulse"></div>
-              <div className="relative text-7xl font-black font-sans text-center text-[#2f3e46] tracking-wide select-all">
-                {card.kanji}
+        <motion.div
+          animate={{ rotateY: isRevealed ? 180 : 0 }}
+          transition={{ duration: 0.6, ease: "easeInOut" }}
+          style={{ transformStyle: "preserve-3d" }}
+          className={`w-full min-h-[510px] rounded-[36px] border-2 border-b-8 shadow-sm flex flex-col justify-between p-6 ${getStatusColor()}`}
+        >
+          {/* UNREVEALED FRONT SIDE (Only Core Kanji) */}
+          <div
+            className="absolute inset-0 p-6 flex flex-col justify-between"
+            style={{ backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}
+          >
+            {/* Top Banner section */}
+            <div className="flex items-center justify-between w-full border-b border-dashed border-[#e9e2d7] pb-3 mb-4">
+              <span className="font-mono text-[10px] text-[#84a98c] font-black tracking-tight uppercase">
+                TEST MODE • ID: {card.id.split("_").pop()}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={speakReading}
+                  className="p-1 px-2 bg-[#f0ede6] text-[#354f52] rounded-xl hover:bg-[#cad2c5] transition-colors cursor-pointer"
+                  title="Pronounce"
+                >
+                  <Volume2 className="w-4 h-4" />
+                </button>
+                {getStatusBadge()}
               </div>
             </div>
-            <div className="text-center mt-6 p-4 bg-[#f0ede6] border border-[#e9e2d7] rounded-xl max-w-sm w-full shadow-inner text-xs font-black text-[#52796f] tracking-wider uppercase">
-              👆 CLICK TO REVEAL DETAILS
-            </div>
-          </div>
-        ) : (
-          <div className="flex-1 flex flex-col justify-between">
-            <div className="flex flex-col items-center">
-              <span className="text-xs font-black tracking-widest text-[#52796f] bg-[#f0ede6] px-4 py-1.5 rounded-full mb-1 border border-[#e9e2d7]">
-                {card.furigana}
-              </span>
 
-              <div className="relative my-4 flex flex-col items-center">
-                <div className="absolute inset-0 bg-[#cad2c5] rounded-full blur-3xl opacity-35 scale-110"></div>
-                <div className="relative text-7xl font-bold text-center text-[#2f3e46] tracking-wide font-sans select-all">
+            <div className="flex-1 flex flex-col justify-center items-center py-6">
+              <div className="relative mb-6">
+                <div className="absolute inset-0 bg-[#cad2c5] rounded-full blur-2xl opacity-40 scale-150 animate-pulse"></div>
+                <div className="relative text-7xl font-black font-sans text-center text-[#2f3e46] tracking-wide select-all">
                   {card.kanji}
                 </div>
               </div>
-
-              <div className="w-full grid grid-cols-2 gap-2 mt-2 px-1">
-                <div className="p-2 bg-[#fdfbf7] rounded-xl border border-[#e9e2d7] flex flex-col items-center text-center">
-                  <span className="font-sans font-black text-[9px] text-[#84a98c] uppercase tracking-widest">
-                    Onyomi (චීන)
-                  </span>
-                  <span className="font-mono text-xs font-bold text-[#52796f] mt-1 break-all">
-                    {card.onyomi || "—"}
-                  </span>
-                </div>
-                <div className="p-2 bg-[#fdfbf7] rounded-xl border border-[#e9e2d7] flex flex-col items-center text-center">
-                  <span className="font-sans font-black text-[9px] text-[#84a98c] uppercase tracking-widest">
-                    Kunyomi (ජපන්)
-                  </span>
-                  <span className="font-mono text-xs font-bold text-[#bc6c25] mt-1 break-all">
-                    {card.kunyomi || "—"}
-                  </span>
-                </div>
+              <div className="text-center mt-6 p-4 bg-[#f0ede6] hover:bg-[#e9e2d7] border border-[#e9e2d7] rounded-2xl max-w-sm w-full shadow-inner text-xs font-black text-[#52796f] tracking-wider uppercase flex items-center justify-center gap-2 transition-colors">
+                <span>👆 CLICK TO FLIP & REVEAL DETAILS</span>
               </div>
             </div>
 
-            <div className="mt-4 space-y-3 border-t border-[#e9e2d7] pt-3 text-center">
-              <div className="flex flex-col items-center">
-                <span className="text-[9px] uppercase tracking-wider text-[#84a98c] font-black mb-0.5">
-                  Sinhala අර්ථය
-                </span>
-                <p className="text-xl font-bold text-[#354f52] font-sans tracking-tight leading-snug px-2">
-                  {card.sinhalaMeaning}
-                </p>
-              </div>
-
-              <div className="flex flex-col items-center">
-                <span className="text-[9px] uppercase tracking-wider text-[#84a98c] font-black mb-0.5">
-                  English Meaning
-                </span>
-                <p className="text-sm font-semibold text-[#52796f] font-display">
-                  {card.englishMeaning}
-                </p>
-              </div>
+            <div className="w-full text-center border-t border-[#f0ede6] pt-3 text-[11px] font-bold text-slate-400">
+              ජපන් අක්ෂරය මතකයෙන් කියවීමට උත්සාහ කරන්න (Try to recall)
             </div>
-
-            {/* PERSISTENT QUICK NOTE */}
-            <div className="mt-4 pt-3 border-t border-dashed border-[#e9e2d7] w-full text-left" onClick={(e) => e.stopPropagation()}>
-              <label className="text-[9px] uppercase tracking-wider text-[#84a98c] font-black block mb-1">
-                Quick Note (පෞද්ගලික සටහන්):
-              </label>
-              <textarea
-                value={note}
-                onChange={(e) => handleNoteChange(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                placeholder="ලියා ගන්න විශේෂ සටහනක් (Type your study notes here)..."
-                className="w-full text-[11px] p-2 rounded-xl border border-[#e9e2d7] bg-[#fdfbf7] text-[#2f3e46] placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#52796f] resize-none h-14 font-medium"
-              />
-            </div>
-
-            {onStatusChange && (
-              <div className="grid grid-cols-2 gap-3 mt-4 pt-3 border-t border-[#e9e2d7]">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onStatusChange("NOT_YET");
-                  }}
-                  className={`w-full py-2.5 px-3 rounded-xl font-sans font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer ${
-                    status === "NOT_YET"
-                      ? "bg-[#bc6c25] text-white shadow-md shadow-[#bc6c25]/20"
-                      : "bg-[#ece2d0] text-[#bc6c25]"
-                  }`}
-                >
-                  ❌ NOT YET
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onStatusChange("OK");
-                  }}
-                  className={`w-full py-2.5 px-3 rounded-xl font-sans font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer ${
-                    status === "OK"
-                      ? "bg-[#52796f] text-white shadow-md shadow-[#52796f]/20"
-                      : "bg-[#f0ede6] text-[#52796f]"
-                  }`}
-                >
-                  ✔️ OK
-                </button>
-              </div>
-            )}
           </div>
-        )}
+
+          {/* REVEALED BACK SIDE (3D Flip reveals Thematic Clipart + Details) */}
+          <div
+            className="absolute inset-0 p-6 flex flex-col justify-between overflow-y-auto custom-scrollbar"
+            style={{
+              backfaceVisibility: "hidden",
+              WebkitBackfaceVisibility: "hidden",
+              transform: "rotateY(180deg)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Top Banner section */}
+            <div className="flex items-center justify-between w-full border-b border-dashed border-[#e9e2d7] pb-3 mb-2">
+              <span className="font-mono text-[10px] text-[#84a98c] font-black tracking-tight uppercase">
+                REVEALED • ID: {card.id.split("_").pop()}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={speakReading}
+                  className="p-1 px-2 bg-[#f0ede6] text-[#354f52] rounded-xl hover:bg-[#cad2c5] transition-colors cursor-pointer"
+                  title="Pronounce"
+                >
+                  <Volume2 className="w-4 h-4" />
+                </button>
+                {getStatusBadge()}
+              </div>
+            </div>
+
+            <div className="flex-1 flex flex-col justify-between">
+              <div className="flex flex-col items-center">
+                <span className="text-xs font-black tracking-widest text-[#52796f] bg-[#f0ede6] px-4 py-1.5 rounded-full mb-1 border border-[#e9e2d7]">
+                  {card.furigana}
+                </span>
+
+                <div className="relative my-3 flex flex-col items-center">
+                  <div className="absolute inset-0 bg-[#cad2c5] rounded-full blur-3xl opacity-35 scale-110"></div>
+                  <div className="relative text-7xl font-bold text-center text-[#2f3e46] tracking-wide font-sans select-all">
+                    {card.kanji}
+                  </div>
+                </div>
+
+                <div className="w-full grid grid-cols-2 gap-2 mt-1 px-1">
+                  <div className="p-2 bg-[#fdfbf7] rounded-xl border border-[#e9e2d7] flex flex-col items-center text-center">
+                    <span className="font-sans font-black text-[9px] text-[#84a98c] uppercase tracking-widest">
+                      Onyomi (චීන)
+                    </span>
+                    <span className="font-mono text-xs font-bold text-[#52796f] mt-0.5 break-all">
+                      {card.onyomi || "—"}
+                    </span>
+                  </div>
+                  <div className="p-2 bg-[#fdfbf7] rounded-xl border border-[#e9e2d7] flex flex-col items-center text-center">
+                    <span className="font-sans font-black text-[9px] text-[#84a98c] uppercase tracking-widest">
+                      Kunyomi (ජපන්)
+                    </span>
+                    <span className="font-mono text-xs font-bold text-[#bc6c25] mt-0.5 break-all">
+                      {card.kunyomi || "—"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-2 space-y-2 border-t border-[#e9e2d7] pt-2 text-center">
+                <div className="flex flex-col items-center">
+                  <span className="text-[9px] uppercase tracking-wider text-[#84a98c] font-black mb-0.5">
+                    Sinhala අර්ථය
+                  </span>
+                  <p className="text-lg font-bold text-[#354f52] font-sans tracking-tight leading-snug px-2">
+                    {card.sinhalaMeaning}
+                  </p>
+                </div>
+
+                <div className="flex flex-col items-center">
+                  <span className="text-[9px] uppercase tracking-wider text-[#84a98c] font-black mb-0.5">
+                    English Meaning
+                  </span>
+                  <p className="text-xs font-semibold text-[#52796f] font-display">
+                    {card.englishMeaning}
+                  </p>
+                </div>
+              </div>
+
+              {/* PERSISTENT QUICK NOTE */}
+              <div className="mt-2 pt-2 border-t border-dashed border-[#e9e2d7] w-full text-left" onClick={(e) => e.stopPropagation()}>
+                <label className="text-[9px] uppercase tracking-wider text-[#84a98c] font-black block mb-1">
+                  Quick Note (පෞද්ගලික සටහන්):
+                </label>
+                <textarea
+                  value={note}
+                  onChange={(e) => handleNoteChange(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  placeholder="ලියා ගන්න විශේෂ සටහනක්..."
+                  className="w-full text-[11px] p-2 rounded-xl border border-[#e9e2d7] bg-[#fdfbf7] text-[#2f3e46] placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#52796f] resize-none h-12 font-medium"
+                />
+              </div>
+
+              {onStatusChange && (
+                <div className="grid grid-cols-2 gap-3 mt-3 pt-2 border-t border-[#e9e2d7]">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onStatusChange("NOT_YET");
+                    }}
+                    className={`w-full py-2 px-3 rounded-xl font-sans font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer ${
+                      status === "NOT_YET"
+                        ? "bg-[#bc6c25] text-white shadow-md shadow-[#bc6c25]/20"
+                        : "bg-[#ece2d0] text-[#bc6c25]"
+                    }`}
+                  >
+                    ❌ NOT YET
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onStatusChange("OK");
+                    }}
+                    className={`w-full py-2 px-3 rounded-xl font-sans font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer ${
+                      status === "OK"
+                        ? "bg-[#52796f] text-white shadow-md shadow-[#52796f]/20"
+                        : "bg-[#f0ede6] text-[#52796f]"
+                    }`}
+                  >
+                    ✔️ OK
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </motion.div>
       </div>
     );
   }

@@ -2069,43 +2069,89 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
               ></div>
             </div>
 
-            {/* Prompt Presentation Card */}
-            <div className="bg-white rounded-[32px] border border-[#e9e2d7] shadow-sm p-8 text-center flex flex-col justify-center items-center min-h-[220px] relative overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-b from-[#fdfbf7]/40 to-transparent pointer-events-none"></div>
-              
-              <div className="space-y-4 z-10 w-full">
-                <span className="text-[10px] font-black uppercase text-[#84a98c] tracking-widest block">
-                  {quizMode === "kanji_reading" && "පහත කන්ජි වචනයේ නිවැරදි කියවීම තෝරන්න (Select Pronunciation)"}
-                  {quizMode === "reading_kanji" && "පහත හිරගනා ශබ්දයට ගැළපෙන කන්ජි වචනය (Select Kanji)"}
-                  {quizMode === "sinhala_verb_japanese" && "පහත සිංහල ක්‍රියාපදයේ නිවැරදි ජපන් වචනය තෝරන්න (Select Japanese Verb)"}
-                  {quizMode === "japanese_verb_sinhala" && "පහත ජපන් ක්‍රියාපදයට ගැළපෙන සිංහල තේරුම (Select Sinhala Meaning)"}
-                  {quizMode === "sinhala_adj_japanese" && "පහත සිංහල විශේෂණ පදයේ නිවැරදි ජපන් වචනය තෝරන්න (Select Japanese Adjective)"}
-                  {quizMode === "japanese_adj_sinhala" && "පහත ජපන් විශේෂණ පදයට ගැළපෙන සිංහල තේරුම (Select Sinhala Meaning)"}
-                  {quizMode === "counting_system" && "පහත ප්‍රශ්නයට ගැළපෙන නිවැරදි ජපන් පසුයෙදුම තෝරන්න (Select Japanese Counter)"}
-                </span>
-
-                <motion.h3 
-                  key={currentIdx}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className={`font-black tracking-tight text-[#2f3e46] ${
-                    currentQuestion.prompt.length > 8 ? "text-3xl" : "text-5xl"
-                  }`}
+            {/* 3D Flip Prompt Presentation Card */}
+            <div className="perspective-1000 w-full min-h-[220px]">
+              <motion.div
+                animate={{ rotateY: isAnswered ? 180 : 0 }}
+                transition={{ duration: 0.6, ease: "easeInOut" }}
+                style={{ transformStyle: "preserve-3d" }}
+                className="relative w-full min-h-[220px] rounded-[32px] border border-[#e9e2d7] shadow-sm bg-white"
+              >
+                {/* FRONT: QUESTION PROMPT */}
+                <div
+                  className="absolute inset-0 p-8 text-center flex flex-col justify-center items-center overflow-hidden rounded-[32px]"
+                  style={{ backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}
                 >
-                  {currentQuestion.prompt}
-                </motion.h3>
+                  <div className="absolute inset-0 bg-gradient-to-b from-[#fdfbf7]/40 to-transparent pointer-events-none"></div>
+                  
+                  <div className="space-y-4 z-10 w-full">
+                    <span className="text-[10px] font-black uppercase text-[#84a98c] tracking-widest block">
+                      {quizMode === "kanji_reading" && "පහත කන්ජි වචනයේ නිවැරදි කියවීම තෝරන්න (Select Pronunciation)"}
+                      {quizMode === "reading_kanji" && "පහත හිරගනා ශබ්දයට ගැළපෙන කන්ජි වචනය (Select Kanji)"}
+                      {quizMode === "sinhala_verb_japanese" && "පහත සිංහල ක්‍රියාපදයේ නිවැරදි ජපන් වචනය තෝරන්න (Select Japanese Verb)"}
+                      {quizMode === "japanese_verb_sinhala" && "පහත ජපන් ක්‍රියාපදයට ගැළපෙන සිංහල තේරුම (Select Sinhala Meaning)"}
+                      {quizMode === "sinhala_adj_japanese" && "පහත සිංහල විශේෂණ පදයේ නිවැරදි ජපන් වචනය තෝරන්න (Select Japanese Adjective)"}
+                      {quizMode === "japanese_adj_sinhala" && "පහත ජපන් විශේෂණ පදයට ගැළපෙන සිංහල තේරුම (Select Sinhala Meaning)"}
+                      {quizMode === "counting_system" && "පහත ප්‍රශ්නයට ගැළපෙන නිවැරදි ජපන් පසුයෙදුම තෝරන්න (Select Japanese Counter)"}
+                    </span>
 
-                {/* Pronounce voice assistant prompt if relevant */}
-                {(quizMode === "japanese_verb_sinhala" || quizMode === "kanji_reading" || quizMode === "japanese_adj_sinhala") && (
-                  <button
-                    type="button"
-                    onClick={() => speakJapanese(currentQuestion.prompt)}
-                    className="mx-auto mt-2 p-2 bg-[#f0ede6] hover:bg-[#e9e2d7]/80 rounded-xl flex items-center gap-1.5 text-xs font-bold text-[#52796f] transition-colors"
-                  >
-                    <Volume2 className="w-3.5 h-3.5" /> Pronounce Prompt
-                  </button>
-                )}
-              </div>
+                    <motion.h3 
+                      key={currentIdx}
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className={`font-black tracking-tight text-[#2f3e46] ${
+                        currentQuestion.prompt.length > 8 ? "text-3xl" : "text-5xl"
+                      }`}
+                    >
+                      {currentQuestion.prompt}
+                    </motion.h3>
+
+                    {/* Pronounce voice assistant prompt if relevant */}
+                    {(quizMode === "japanese_verb_sinhala" || quizMode === "kanji_reading" || quizMode === "japanese_adj_sinhala") && (
+                      <button
+                        type="button"
+                        onClick={() => speakJapanese(currentQuestion.prompt)}
+                        className="mx-auto mt-2 p-2 bg-[#f0ede6] hover:bg-[#e9e2d7]/80 rounded-xl flex items-center gap-1.5 text-xs font-bold text-[#52796f] transition-colors cursor-pointer"
+                      >
+                        <Volume2 className="w-3.5 h-3.5" /> Pronounce Prompt
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* BACK (REVEALED FLIP): THEMATIC CLIPART + ANSWER EXPLANATION */}
+                <div
+                  className="absolute inset-0 p-6 text-center flex flex-col justify-center items-center overflow-hidden rounded-[32px] bg-linear-to-b from-[#fdfbf7] to-white border border-[#e9e2d7]"
+                  style={{
+                    backfaceVisibility: "hidden",
+                    WebkitBackfaceVisibility: "hidden",
+                    transform: "rotateY(180deg)"
+                  }}
+                >
+                  <div className="flex flex-col items-center space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className={`px-4 py-2 rounded-full text-sm font-black flex items-center gap-2 ${
+                        selectedAnswer === currentQuestion.correctAnswer
+                          ? "bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-sm"
+                          : "bg-rose-100 text-rose-800 border border-rose-300 shadow-sm"
+                      }`}>
+                        {selectedAnswer === currentQuestion.correctAnswer ? (
+                          <>
+                            <Check className="w-4 h-4 text-emerald-700 font-bold" /> නිවැරදියි! (Correct)
+                          </>
+                        ) : (
+                          <>
+                            <X className="w-4 h-4 text-rose-700 font-bold" /> වැරදියි (Incorrect)
+                          </>
+                        )}
+                      </span>
+                    </div>
+                    <div className="text-base font-bold text-[#354f52]">
+                      නිවැරදි පිළිතුර: <span className="text-[#bc6c25] font-black text-xl">{currentQuestion.correctAnswer}</span>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
             </div>
 
             {/* Answers Choice Matrix (4 Options) */}
