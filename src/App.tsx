@@ -37,7 +37,8 @@ import {
   VolumeX,
   Link,
   Wheat,
-  Gamepad2
+  Gamepad2,
+  FileCheck
 } from "lucide-react";
 import { PRELOADED_KANJI, KanjiCard } from "./data/preloadedKanji";
 import { LearningStatus, UserProgress, JFTGrammar, JFTConjunction } from "./types";
@@ -55,6 +56,7 @@ import DictionaryView from "./components/DictionaryView";
 import StatisticsView from "./components/StatisticsView";
 import AlphabetView from "./components/AlphabetView";
 import { SkillTestsView } from "./components/SkillTestsView";
+import { MockTestsView } from "./components/MockTestsView";
 import { SamuraiGameView } from "./components/SamuraiGameView";
 import { VegetableSorterGameView } from "./components/VegetableSorterGameView";
 import { preloadedCounters, CounterItem } from "./data/preloadedCounters";
@@ -93,7 +95,7 @@ function getKanjiForm(num: number, counterChar: string): string {
 
 export default function App() {
   // Navigation tabs
-  const [activeTab, setActiveTab] = useState<"alphabet" | "learn" | "test" | "verbs" | "adjectives" | "counters" | "conjunctions" | "grammar" | "quiz" | "dictionary" | "stats" | "profile" | "skill_tests" | "games">(() => {
+  const [activeTab, setActiveTab] = useState<"alphabet" | "learn" | "test" | "verbs" | "adjectives" | "counters" | "conjunctions" | "grammar" | "quiz" | "dictionary" | "stats" | "profile" | "skill_tests" | "mock_tests" | "games">(() => {
     const saved = localStorage.getItem("jft_active_tab");
     return (saved as any) || "alphabet";
   });
@@ -2031,7 +2033,7 @@ export default function App() {
             </div>
 
             {/* Switcher Grid: hidden on mobile by default unless isMobileMenuOpen is true */}
-            <div className={`${isMobileMenuOpen ? "grid" : "hidden md:grid"} grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-12 gap-2 bg-[#faf8f5] border border-[#e9e2d7]/80 p-2 rounded-2xl w-full shadow-3xs transition-all duration-300`}>
+            <div className={`${isMobileMenuOpen ? "grid" : "hidden md:grid"} grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-13 gap-2 bg-[#faf8f5] border border-[#e9e2d7]/80 p-2 rounded-2xl w-full shadow-3xs transition-all duration-300`}>
               
               {/* Tab 1: Alphabet */}
               <button
@@ -2224,6 +2226,22 @@ export default function App() {
                 }`}
               >
                 <Wheat className={`w-4 h-4 ${activeTab === "skill_tests" ? "text-amber-300 animate-pulse" : "text-[#2d6a4f]"}`} /> Skill Tests
+              </button>
+
+              {/* Tab 11.5: Mock Tests (ASAT විභාග පරිගණක අනුකරණය - CBT Mock Exam) */}
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab("mock_tests");
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`px-3 py-3 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
+                  activeTab === "mock_tests"
+                    ? "bg-[#1d4ed8] text-white shadow-md border-0 ring-4 ring-[#1d4ed8]/25"
+                    : "text-[#1d4ed8] hover:bg-white hover:text-[#1e40af] border border-blue-300 bg-blue-50/70"
+                }`}
+              >
+                <FileCheck className={`w-4 h-4 ${activeTab === "mock_tests" ? "text-amber-300 animate-pulse" : "text-[#1d4ed8]"}`} /> Mock Tests
               </button>
 
               {/* Tab 12: Games & Samurai Dojo (සමුරායි සටන් ක්‍රීඩා) */}
@@ -4603,6 +4621,13 @@ export default function App() {
         {activeTab === "skill_tests" && (
           <div id="tab-panel-skill-tests">
             <SkillTestsView />
+          </div>
+        )}
+
+        {/* TAB 11.5: MOCK TESTS (ASAT CBT EXAMINATION SIMULATOR) */}
+        {activeTab === "mock_tests" && (
+          <div id="tab-panel-mock-tests">
+            <MockTestsView userProfile={userProfile} />
           </div>
         )}
 
