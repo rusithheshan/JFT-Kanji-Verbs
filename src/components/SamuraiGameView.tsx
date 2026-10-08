@@ -576,10 +576,10 @@ const GAME_CATEGORIES: CategoryMeta[] = [
   },
   {
     id: "kanji",
-    titleSi: "JFT & N5/N4 කන්ජි (Kanji Mastery)",
+    titleSi: "කන්ජි ප්‍රගුණනය (Kanji Mastery - All / JFT / N3)",
     titleJp: "漢字修行",
-    descriptionSi: "විභාග සඳහා අත්‍යවශ්‍ය කන්ජි අක්ෂර, ඒවායේ කියවීම් සහ සිංහල තේරුම් නිවැරදිව තෝරා ජයගන්න.",
-    badge: "කන්ජි 100+",
+    descriptionSi: "JFT, N5, N4 සහ N3 මට්ටම්වල කන්ජි අක්ෂර 1,200+, ඒවායේ කියවීම් සහ සිංහල තේරුම් නිවැරදිව තෝරා ජයගන්න.",
+    badge: `කන්ජි ${PRELOADED_KANJI.length}+`,
     color: "from-red-600 to-rose-700",
     count: PRELOADED_KANJI.length
   },
@@ -1031,9 +1031,10 @@ export function SamuraiGameView() {
       const target = shuffled[0];
       const distractors = shuffled.slice(1, 4);
       const allChoices = [target, ...distractors].sort(() => Math.random() - 0.5);
+      const lvlLabel = target.level || (target.id.startsWith("n3") ? "N3" : "JFT");
       return {
         id: target.id,
-        promptCategory: "JFT / N5 කන්ජි අභියෝගය",
+        promptCategory: `කන්ජි අභියෝගය • [${lvlLabel}]`,
         promptSi: `"${target.sinhalaMeaning}" යන අර්ථය නිරූපණය කරන කන්ජි අක්ෂරය තෝරන්න:`,
         correctAnswer: {
           id: target.id,

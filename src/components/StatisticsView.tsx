@@ -30,11 +30,12 @@ import {
   Sparkles,
   RefreshCw
 } from "lucide-react";
-import { KanjiCard, JFTGrammar, JFTConjunction, UserProgress } from "../types";
+import { KanjiCard, JFTGrammar, JFTConjunction, UserProgress, VocabularyItem } from "../types";
 import { JFTVerb } from "../data/preloadedVerbs";
 import { JFTAdjective } from "../data/preloadedAdjectives";
 import { preloadedCounters, CounterItem } from "../data/preloadedCounters";
 import { PRELOADED_CONJUNCTIONS } from "../data/preloadedConjunctions";
+import { PRELOADED_VOCABULARY } from "../data/preloadedVocabulary";
 
 interface StatisticsViewProps {
   kanjiCards: KanjiCard[];
@@ -48,7 +49,9 @@ interface StatisticsViewProps {
   conjunctionsList?: JFTConjunction[];
   conjunctionsProgress?: UserProgress;
   countersProgress: UserProgress;
-  onClearProgress?: (category: "kanji" | "verbs" | "adjectives" | "grammar" | "conjunctions" | "counters" | "all") => void;
+  vocabularyList?: VocabularyItem[];
+  vocabularyProgress?: UserProgress;
+  onClearProgress?: (category: "kanji" | "vocabulary" | "verbs" | "adjectives" | "grammar" | "conjunctions" | "counters" | "all") => void;
 }
 
 export default function StatisticsView({
@@ -63,11 +66,13 @@ export default function StatisticsView({
   conjunctionsList = PRELOADED_CONJUNCTIONS,
   conjunctionsProgress = {},
   countersProgress,
+  vocabularyList = PRELOADED_VOCABULARY,
+  vocabularyProgress = {},
   onClearProgress
 }: StatisticsViewProps) {
   // Safe Double confirmation layout state
   const [confirmState, setConfirmState] = useState<{
-    category: "kanji" | "verbs" | "adjectives" | "grammar" | "conjunctions" | "counters" | "all" | null;
+    category: "kanji" | "vocabulary" | "verbs" | "adjectives" | "grammar" | "conjunctions" | "counters" | "all" | null;
     step: 0 | 1 | 2;
   }>({ category: null, step: 0 });
 
@@ -150,14 +155,36 @@ export default function StatisticsView({
 
   // Overall counts for categories
   const stats = useMemo(() => {
-    // Kanji
+    // Kanji overall & per-level breakdown
     const totalKanji = kanjiCards.length;
     let okKanji = 0;
     let notYetKanji = 0;
+    let totalN5 = 0, okN5 = 0;
+    let totalN4 = 0, okN4 = 0;
+    let totalN3 = 0, okN3 = 0;
+    let totalJft = 0, okJft = 0;
+
     kanjiCards.forEach(c => {
       const p = kanjiProgress[c.id];
-      if (p === "OK") okKanji++;
+      const isOk = p === "OK";
+      if (isOk) okKanji++;
       else if (p === "NOT_YET") notYetKanji++;
+
+      const isN3 = c.level === "N3" || c.id.startsWith("n3");
+      if (isN3) {
+        totalN3++;
+        if (isOk) okN3++;
+      } else {
+        totalJft++;
+        if (isOk) okJft++;
+        if (c.level === "N5" || (c.indexNumber && c.indexNumber <= 150)) {
+          totalN5++;
+          if (isOk) okN5++;
+        } else {
+          totalN4++;
+          if (isOk) okN4++;
+        }
+      }
     });
     const unstudiedKanji = Math.max(0, totalKanji - okKanji - notYetKanji);
 
@@ -165,10 +192,36 @@ export default function StatisticsView({
     const totalVerbs = verbsList.length;
     let okVerbs = 0;
     let notYetVerbs = 0;
+    let totalVerbsJft = 0, okVerbsJft = 0;
+    let totalVerbsN3 = 0, okVerbsN3 = 0;
+    let totalG1 = 0, okG1 = 0;
+    let totalG2 = 0, okG2 = 0;
+    let totalG3 = 0, okG3 = 0;
+
     verbsList.forEach(v => {
       const p = verbsProgress[v.id];
-      if (p === "OK") okVerbs++;
+      const isOk = p === "OK";
+      if (isOk) okVerbs++;
       else if (p === "NOT_YET") notYetVerbs++;
+
+      if (v.level === "N3") {
+        totalVerbsN3++;
+        if (isOk) okVerbsN3++;
+      } else {
+        totalVerbsJft++;
+        if (isOk) okVerbsJft++;
+      }
+
+      if (v.group === "Group 1") {
+        totalG1++;
+        if (isOk) okG1++;
+      } else if (v.group === "Group 2") {
+        totalG2++;
+        if (isOk) okG2++;
+      } else if (v.group === "Group 3") {
+        totalG3++;
+        if (isOk) okG3++;
+      }
     });
     const unstudiedVerbs = Math.max(0, totalVerbs - okVerbs - notYetVerbs);
 
@@ -216,14 +269,67 @@ export default function StatisticsView({
     });
     const unstudiedCounters = Math.max(0, totalCounters - okCounters - notYetCounters);
 
+    // Vocabulary
+    const totalVocab = vocabularyList.length;
+    let okVocab = 0;
+    let notYetVocab = 0;
+    let totalVJft = 0, okVJft = 0;
+    let totalVN5 = 0, okVN5 = 0;
+    let totalVN4 = 0, okVN4 = 0;
+    let totalVN3 = 0, okVN3 = 0;
+
+    vocabularyList.forEach(v => {
+      const p = vocabularyProgress[v.id];
+      const isOk = p === "OK";
+      if (isOk) okVocab++;
+      else if (p === "NOT_YET") notYetVocab++;
+
+      if (v.level === "N3") {
+        totalVN3++;
+        if (isOk) okVN3++;
+      } else if (v.level === "N4") {
+        totalVN4++;
+        if (isOk) okVN4++;
+      } else if (v.level === "N5") {
+        totalVN5++;
+        if (isOk) okVN5++;
+      } else if (v.level === "JFT") {
+        totalVJft++;
+        if (isOk) okVJft++;
+      }
+    });
+    const unstudiedVocab = Math.max(0, totalVocab - okVocab - notYetVocab);
+
     // Total masteries
-    const totalItems = totalKanji + totalVerbs + totalAdjectives + totalGrammar + totalConjunctions + totalCounters;
-    const totalOk = okKanji + okVerbs + okAdjectives + okGrammar + okConjunctions + okCounters;
+    const totalItems = totalKanji + totalVocab + totalVerbs + totalAdjectives + totalGrammar + totalConjunctions + totalCounters;
+    const totalOk = okKanji + okVocab + okVerbs + okAdjectives + okGrammar + okConjunctions + okCounters;
     const overallPercentage = totalItems > 0 ? Math.round((totalOk / totalItems) * 100) : 0;
 
     return {
       kanji: { total: totalKanji, ok: okKanji, notYet: notYetKanji, unstudied: unstudiedKanji, pct: totalKanji > 0 ? Math.round((okKanji / totalKanji) * 100) : 0 },
+      kanjiLevels: {
+        jft: { total: totalJft, ok: okJft, pct: totalJft > 0 ? Math.round((okJft / totalJft) * 100) : 0 },
+        n5: { total: totalN5, ok: okN5, pct: totalN5 > 0 ? Math.round((okN5 / totalN5) * 100) : 0 },
+        n4: { total: totalN4, ok: okN4, pct: totalN4 > 0 ? Math.round((okN4 / totalN4) * 100) : 0 },
+        n3: { total: totalN3, ok: okN3, pct: totalN3 > 0 ? Math.round((okN3 / totalN3) * 100) : 0 }
+      },
+      vocabulary: { total: totalVocab, ok: okVocab, notYet: notYetVocab, unstudied: unstudiedVocab, pct: totalVocab > 0 ? Math.round((okVocab / totalVocab) * 100) : 0 },
+      vocabLevels: {
+        jft: { total: totalVJft, ok: okVJft, pct: totalVJft > 0 ? Math.round((okVJft / totalVJft) * 100) : 0 },
+        n5: { total: totalVN5, ok: okVN5, pct: totalVN5 > 0 ? Math.round((okVN5 / totalVN5) * 100) : 0 },
+        n4: { total: totalVN4, ok: okVN4, pct: totalVN4 > 0 ? Math.round((okVN4 / totalVN4) * 100) : 0 },
+        n3: { total: totalVN3, ok: okVN3, pct: totalVN3 > 0 ? Math.round((okVN3 / totalVN3) * 100) : 0 }
+      },
       verbs: { total: totalVerbs, ok: okVerbs, notYet: notYetVerbs, unstudied: unstudiedVerbs, pct: totalVerbs > 0 ? Math.round((okVerbs / totalVerbs) * 100) : 0 },
+      verbLevels: {
+        jft: { total: totalVerbsJft, ok: okVerbsJft, pct: totalVerbsJft > 0 ? Math.round((okVerbsJft / totalVerbsJft) * 100) : 0 },
+        n3: { total: totalVerbsN3, ok: okVerbsN3, pct: totalVerbsN3 > 0 ? Math.round((okVerbsN3 / totalVerbsN3) * 100) : 0 }
+      },
+      verbGroups: {
+        g1: { total: totalG1, ok: okG1, pct: totalG1 > 0 ? Math.round((okG1 / totalG1) * 100) : 0 },
+        g2: { total: totalG2, ok: okG2, pct: totalG2 > 0 ? Math.round((okG2 / totalG2) * 100) : 0 },
+        g3: { total: totalG3, ok: okG3, pct: totalG3 > 0 ? Math.round((okG3 / totalG3) * 100) : 0 }
+      },
       adjectives: { total: totalAdjectives, ok: okAdjectives, notYet: notYetAdjectives, unstudied: unstudiedAdjectives, pct: totalAdjectives > 0 ? Math.round((okAdjectives / totalAdjectives) * 100) : 0 },
       grammar: { total: totalGrammar, ok: okGrammar, notYet: notYetGrammar, unstudied: unstudiedGrammar, pct: totalGrammar > 0 ? Math.round((okGrammar / totalGrammar) * 100) : 0 },
       conjunctions: { total: totalConjunctions, ok: okConjunctions, notYet: notYetConjunctions, unstudied: unstudiedConjunctions, pct: totalConjunctions > 0 ? Math.round((okConjunctions / totalConjunctions) * 100) : 0 },
@@ -233,6 +339,8 @@ export default function StatisticsView({
   }, [
     kanjiCards,
     kanjiProgress,
+    vocabularyList,
+    vocabularyProgress,
     verbsList,
     verbsProgress,
     adjectivesList,
@@ -252,6 +360,12 @@ export default function StatisticsView({
         "Mastered (OK)": stats.kanji.ok,
         "Needs Practice (Not Yet)": stats.kanji.notYet,
         "Unstudied (නොඉගෙනගත්)": stats.kanji.unstudied
+      },
+      {
+        name: "Vocabulary (වචන)",
+        "Mastered (OK)": stats.vocabulary.ok,
+        "Needs Practice (Not Yet)": stats.vocabulary.notYet,
+        "Unstudied (නොඉගෙනගත්)": stats.vocabulary.unstudied
       },
       {
         name: "Verbs (ක්‍රියාපද)",
@@ -704,13 +818,20 @@ export default function StatisticsView({
           📚 Visual Completions per Course Segment (අධ්‍යයන ප්‍රගති මීටර)
         </h3>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
           {renderMiniSpeedometer(
-            "JFT Kanji අකුරු",
+            "Kanji (JFT & N3)",
             stats.kanji.ok,
             stats.kanji.total,
             "#52796f",
             <BookOpen className="w-4 h-4 text-[#52796f]" />
+          )}
+          {renderMiniSpeedometer(
+            "Vocabulary වචන",
+            stats.vocabulary.ok,
+            stats.vocabulary.total,
+            "#2d6a4f",
+            <BookOpen className="w-4 h-4 text-[#2d6a4f]" />
           )}
           {renderMiniSpeedometer(
             "Verbs ක්‍රියාපද",
@@ -740,6 +861,118 @@ export default function StatisticsView({
             "#bc6c25",
             <Award className="w-4 h-4 text-[#bc6c25]" />
           )}
+        </div>
+
+        {/* Kanji Breakdown by Level (All, JFT, N5, N4, N3) */}
+        <div className="mt-6 bg-[#fdfbf7] p-5 rounded-2xl border border-[#e9e2d7] space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-black text-[#354f52] uppercase tracking-wider flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-[#bc6c25]" /> Kanji Level Mastery Breakdown (කන්ජි මට්ටම් අනුව ප්‍රගතිය)
+            </span>
+            <span className="text-[11px] font-bold text-slate-500">
+              Total {stats.kanji.total} Kanji
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {[
+              { label: "🇯🇵 JFT Kanji (N5+N4)", data: stats.kanjiLevels.jft, color: "bg-amber-600", text: "text-amber-700" },
+              { label: "🟢 N5 Beginner Kanji", data: stats.kanjiLevels.n5, color: "bg-sky-600", text: "text-sky-700" },
+              { label: "🔵 N4 Intermediate Kanji", data: stats.kanjiLevels.n4, color: "bg-emerald-600", text: "text-emerald-700" },
+              { label: "🟣 N3 Advanced (L01-L41)", data: stats.kanjiLevels.n3, color: "bg-purple-600", text: "text-purple-700" }
+            ].map((item, idx) => (
+              <div key={idx} className="bg-white p-3.5 rounded-xl border border-[#e9e2d7] space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold">
+                  <span className={item.text}>{item.label}</span>
+                  <span className="font-mono font-black">{item.data.pct}%</span>
+                </div>
+                <div className="w-full bg-[#f0ede6] h-2 rounded-full overflow-hidden">
+                  <div
+                    className={`${item.color} h-full rounded-full transition-all duration-300`}
+                    style={{ width: `${item.data.pct}%` }}
+                  />
+                </div>
+                <div className="text-[10px] text-slate-400 font-bold text-right">
+                  {item.data.ok} / {item.data.total} mastered
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Vocabulary Breakdown by Level (All, JFT, N5, N4, N3) */}
+        <div className="mt-4 bg-[#fdfbf7] p-5 rounded-2xl border border-[#e9e2d7] space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-black text-[#2d6a4f] uppercase tracking-wider flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-[#2d6a4f]" /> Vocabulary Level Breakdown (වචන මාලා මට්ටම් අනුව ප්‍රගතිය)
+            </span>
+            <span className="text-[11px] font-bold text-slate-500">
+              Total {stats.vocabulary.total} Vocabulary Items
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {[
+              { label: "🇯🇵 JFT-Basic Words", data: stats.vocabLevels.jft, color: "bg-rose-600", text: "text-rose-700" },
+              { label: "🟢 N5 Beginner Words", data: stats.vocabLevels.n5, color: "bg-amber-600", text: "text-amber-700" },
+              { label: "🔵 N4 Intermediate Words", data: stats.vocabLevels.n4, color: "bg-emerald-600", text: "text-emerald-700" },
+              { label: "🟣 N3 Advanced (L01-L41)", data: stats.vocabLevels.n3, color: "bg-blue-600", text: "text-blue-700" }
+            ].map((item, idx) => (
+              <div key={idx} className="bg-white p-3.5 rounded-xl border border-[#e9e2d7] space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold">
+                  <span className={item.text}>{item.label}</span>
+                  <span className="font-mono font-black">{item.data.pct}%</span>
+                </div>
+                <div className="w-full bg-[#f0ede6] h-2 rounded-full overflow-hidden">
+                  <div
+                    className={`${item.color} h-full rounded-full transition-all duration-300`}
+                    style={{ width: `${item.data.pct}%` }}
+                  />
+                </div>
+                <div className="text-[10px] text-slate-400 font-bold text-right">
+                  {item.data.ok} / {item.data.total} mastered
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Verbs Breakdown by Level & Group */}
+        <div className="mt-4 bg-[#fdfbf7] p-5 rounded-2xl border border-[#e9e2d7] space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-black text-[#bc6c25] uppercase tracking-wider flex items-center gap-1.5">
+              <Zap className="w-3.5 h-3.5 text-[#bc6c25]" /> Verbs Level & Group Breakdown (ක්‍රියාපද මට්ටම් සහ කාණ්ඩ අනුව ප්‍රගතිය)
+            </span>
+            <span className="text-[11px] font-bold text-slate-500">
+              Total {stats.verbs.total} Verbs
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            {[
+              { label: "🇯🇵 JFT-Basic Verbs", data: stats.verbLevels.jft, color: "bg-amber-600", text: "text-amber-700" },
+              { label: "🟣 JLPT N3 Verbs", data: stats.verbLevels.n3, color: "bg-purple-600", text: "text-purple-700" },
+              { label: "⚡ Group 1 (Godan • 1 වන)", data: stats.verbGroups.g1, color: "bg-sky-600", text: "text-sky-700" },
+              { label: "🌿 Group 2 (Ichidan • 2 වන)", data: stats.verbGroups.g2, color: "bg-emerald-600", text: "text-emerald-700" },
+              { label: "🔮 Group 3 (Irregular • 3 වන)", data: stats.verbGroups.g3, color: "bg-rose-600", text: "text-rose-700" }
+            ].map((item, idx) => (
+              <div key={idx} className="bg-white p-3.5 rounded-xl border border-[#e9e2d7] space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold">
+                  <span className={item.text}>{item.label}</span>
+                  <span className="font-mono font-black">{item.data.pct}%</span>
+                </div>
+                <div className="w-full bg-[#f0ede6] h-2 rounded-full overflow-hidden">
+                  <div
+                    className={`${item.color} h-full rounded-full transition-all duration-300`}
+                    style={{ width: `${item.data.pct}%` }}
+                  />
+                </div>
+                <div className="text-[10px] text-slate-400 font-bold text-right">
+                  {item.data.ok} / {item.data.total} mastered
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -1005,13 +1238,20 @@ export default function StatisticsView({
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3.5">
             <button
               type="button"
               onClick={() => setConfirmState({ category: "kanji", step: 1 })}
               className="py-3 px-4 bg-white hover:bg-amber-50/20 text-[#bc6c25] border border-[#bc6c25]/30 rounded-2xl text-[11px] font-black text-center transition cursor-pointer shadow-3xs"
             >
               🧹 Clear Kanji Progress
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmState({ category: "vocabulary", step: 1 })}
+              className="py-3 px-4 bg-white hover:bg-amber-50/20 text-[#bc6c25] border border-[#bc6c25]/30 rounded-2xl text-[11px] font-black text-center transition cursor-pointer shadow-3xs"
+            >
+              🧹 Clear Vocab Progress
             </button>
             <button
               type="button"

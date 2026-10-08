@@ -9,7 +9,7 @@ dotenv.config();
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   // Make sure we parse standard JSON bodies and large Base64 uploads safely.
   app.use(express.json({ limit: "50mb" }));
@@ -742,18 +742,23 @@ Ensure the output is valid JSON only, without any markdown fence wrappers.
   });
 
   // Serve static assets and routing in production, or mount Vite middleware in development
-  if (process.env.NODE_ENV !== "production") {
+  const distPath = path.join(process.cwd(), "dist");
+  const isProduction =
+    process.env.NODE_ENV === "production" ||
+    process.env.npm_lifecycle_event === "start" ||
+    (process.env.NODE_ENV !== "development" && fs.existsSync(path.join(distPath, "index.html")));
+
+  if (isProduction && fs.existsSync(distPath)) {
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  } else {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
   }
 
   app.listen(PORT, "0.0.0.0", () => {

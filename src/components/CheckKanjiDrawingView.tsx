@@ -93,19 +93,32 @@ export default function CheckKanjiDrawingView({
   const lastX = useRef(0);
   const lastY = useRef(0);
 
+  const [levelFilter, setLevelFilter] = useState<"ALL" | "JFT" | "N5" | "N4" | "N3">("ALL");
+
   const activeCard = shuffledDeck[currentIdx];
 
-  // Initialize shuffled deck
+  // Initialize shuffled deck based on selected level
   useEffect(() => {
-    if (kanjiCards.length > 0) {
-      const shuffled = [...kanjiCards].sort(() => 0.5 - Math.random());
-      setShuffledDeck(shuffled);
-      setCurrentIdx(0);
-      setStep("draw");
-      setDrawingScore(null);
-      setShowOutline(false);
+    let pool = kanjiCards;
+    if (levelFilter !== "ALL") {
+      if (levelFilter === "JFT") {
+        pool = kanjiCards.filter(c => c.level === "N5" || c.level === "N4" || !c.id.startsWith("n3"));
+      } else if (levelFilter === "N3") {
+        pool = kanjiCards.filter(c => c.level === "N3" || c.id.startsWith("n3"));
+      } else if (levelFilter === "N5") {
+        pool = kanjiCards.filter(c => c.level === "N5" || (c.indexNumber && c.indexNumber <= 150));
+      } else if (levelFilter === "N4") {
+        pool = kanjiCards.filter(c => c.level === "N4" || (c.indexNumber && c.indexNumber > 150 && !c.id.startsWith("n3")));
+      }
     }
-  }, [kanjiCards]);
+    if (pool.length === 0) pool = kanjiCards;
+    const shuffled = [...pool].sort(() => 0.5 - Math.random());
+    setShuffledDeck(shuffled);
+    setCurrentIdx(0);
+    setStep("draw");
+    setDrawingScore(null);
+    setShowOutline(false);
+  }, [kanjiCards, levelFilter]);
 
   // Reset drawing sheet when current Kanji card changes
   useEffect(() => {
@@ -492,6 +505,29 @@ export default function CheckKanjiDrawingView({
             ◀ ආපසු (Setup Menu)
           </button>
         )}
+      </div>
+
+      {/* Kanji Level Filter Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-[#fdfbf7] rounded-2xl border border-[#e9e2d7]">
+        <span className="text-xs font-black text-[#52796f] uppercase">
+          🎯 Practice Level (පුහුණු මට්ටම):
+        </span>
+        <div className="flex flex-wrap items-center gap-1.5 p-1 bg-[#f0ede6] rounded-xl border border-[#e9e2d7]">
+          {(["ALL", "JFT", "N5", "N4", "N3"] as const).map((lvl) => (
+            <button
+              key={lvl}
+              type="button"
+              onClick={() => setLevelFilter(lvl)}
+              className={`px-3 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
+                levelFilter === lvl
+                  ? "bg-[#52796f] text-white shadow-xs"
+                  : "text-[#52796f] hover:bg-white/60"
+              }`}
+            >
+              {lvl === "ALL" ? "All" : lvl}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* QUIZ ITEM WORKSPACE PRESENTATION */}

@@ -68,6 +68,31 @@ export default function KanjiCardView({
     }
   };
 
+  const getLevelBadge = () => {
+    const lvl = card.level || (card.id.startsWith("n3") ? "N3" : (card.indexNumber && card.indexNumber <= 150 ? "N5" : "N4"));
+    let badgeStyle = "bg-amber-100 text-amber-900 border-amber-200";
+    if (lvl === "N3") badgeStyle = "bg-purple-100 text-purple-900 border-purple-200";
+    else if (lvl === "N4") badgeStyle = "bg-emerald-100 text-emerald-900 border-emerald-200";
+    else if (lvl === "N5") badgeStyle = "bg-sky-100 text-sky-900 border-sky-200";
+    else if (lvl === "JFT") badgeStyle = "bg-amber-100 text-amber-900 border-amber-200";
+
+    return (
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className={`px-2 py-0.5 rounded-md text-[10px] font-black border ${badgeStyle}`}>
+          {lvl}
+        </span>
+        {card.lesson && (
+          <span className="px-1.5 py-0.5 rounded-md text-[9px] font-extrabold bg-[#f0ede6] text-[#354f52] border border-[#e9e2d7]">
+            {card.lesson}
+          </span>
+        )}
+        <span className="font-mono text-[9px] text-[#84a98c] font-black">
+          #{card.indexNumber || card.id.split("_").pop()}
+        </span>
+      </div>
+    );
+  };
+
   // Speaks the Kanji or Furigana reading using basic browser speech
   const speakReading = (e: MouseEvent) => {
     e.stopPropagation();
@@ -107,9 +132,7 @@ export default function KanjiCardView({
           >
             {/* Top Banner section */}
             <div className="flex items-center justify-between w-full border-b border-dashed border-[#e9e2d7] pb-3 mb-4">
-              <span className="font-mono text-[10px] text-[#84a98c] font-black tracking-tight uppercase">
-                TEST MODE • ID: {card.id.split("_").pop()}
-              </span>
+              {getLevelBadge()}
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -152,9 +175,7 @@ export default function KanjiCardView({
           >
             {/* Top Banner section */}
             <div className="flex items-center justify-between w-full border-b border-dashed border-[#e9e2d7] pb-3 mb-2">
-              <span className="font-mono text-[10px] text-[#84a98c] font-black tracking-tight uppercase">
-                REVEALED • ID: {card.id.split("_").pop()}
-              </span>
+              {getLevelBadge()}
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -294,9 +315,7 @@ export default function KanjiCardView({
         >
           {/* Top Banner section */}
           <div className="flex items-center justify-between w-full border-b border-dashed border-[#e9e2d7] pb-3">
-            <span className="font-mono text-[10px] text-[#84a98c] font-black tracking-tight uppercase">
-              ID: {card.id.split("_").pop()}
-            </span>
+            {getLevelBadge()}
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -368,9 +387,7 @@ export default function KanjiCardView({
         >
           <div className="space-y-4 border-b border-[#f0ede6] pb-3">
             <div className="flex items-center justify-between">
-              <span className="font-mono text-[9px] text-slate-400 font-extrabold uppercase">
-                BACKSIDE DETAIL • {card.id.split("_").pop()}
-              </span>
+              {getLevelBadge()}
               <button
                 type="button"
                 onClick={() => setIsFlipped(false)}

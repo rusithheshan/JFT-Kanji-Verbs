@@ -16,13 +16,17 @@ import {
   Award,
   Layers,
   FileCheck,
-  AlertTriangle
+  AlertTriangle,
+  Maximize,
+  Minimize,
+  Smartphone
 } from "lucide-react";
 import {
   ALL_MOCK_TEST_PAPERS,
   MockQuestion,
   MockTestPaper
 } from "../data/mockTestsData";
+import { JFTMockTestsView } from "./JFTMockTestsView";
 
 interface MockTestsViewProps {
   userProfile?: {
@@ -33,6 +37,9 @@ interface MockTestsViewProps {
 }
 
 export function MockTestsView({ userProfile }: MockTestsViewProps) {
+  // Top Exam Mode Switcher: initially null so user chooses between Agriculture and JFT
+  const [mockExamType, setMockExamType] = useState<"agriculture" | "jft" | null>(null);
+
   // 10 Papers Selection (Default: Paper 1)
   const [selectedPaperIndex, setSelectedPaperIndex] = useState<number>(0);
   const activePaper: MockTestPaper = ALL_MOCK_TEST_PAPERS[selectedPaperIndex] || ALL_MOCK_TEST_PAPERS[0];
@@ -74,6 +81,54 @@ export function MockTestsView({ userProfile }: MockTestsViewProps) {
   const [resultFilter, setResultFilter] = useState<"all" | "incorrect" | "flagged">("all");
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
+
+  const toggleFullScreen = async () => {
+    try {
+      if (!isFullScreen) {
+        if (containerRef.current?.requestFullscreen) {
+          await containerRef.current.requestFullscreen();
+        }
+        setIsFullScreen(true);
+        try {
+          if (screen.orientation && "lock" in screen.orientation) {
+            // @ts-expect-error - orientation lock
+            await screen.orientation.lock("landscape");
+          }
+        } catch {
+          // ignore orientation lock error
+        }
+      } else {
+        if (document.fullscreenElement && document.exitFullscreen) {
+          await document.exitFullscreen();
+        }
+        setIsFullScreen(false);
+        try {
+          if (screen.orientation && "unlock" in screen.orientation) {
+            screen.orientation.unlock();
+          }
+        } catch {
+          // ignore
+        }
+      }
+    } catch {
+      setIsFullScreen((prev) => !prev);
+    }
+  };
+
+  useEffect(() => {
+    const handleFsChange = () => {
+      if (!document.fullscreenElement) {
+        setIsFullScreen(false);
+      }
+    };
+    document.addEventListener("fullscreenchange", handleFsChange);
+    document.addEventListener("webkitfullscreenchange", handleFsChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFsChange);
+      document.removeEventListener("webkitfullscreenchange", handleFsChange);
+    };
+  }, []);
 
   // Countdown timer hook
   useEffect(() => {
@@ -164,15 +219,195 @@ export function MockTestsView({ userProfile }: MockTestsViewProps) {
     return activePaper.questions;
   }, [activePaper]);
 
+  if (mockExamType === null) {
+    return (
+      <div className="min-h-[85vh] w-full bg-[#1e1e1e] text-slate-100 flex flex-col items-center justify-center p-4 sm:p-8 font-sans">
+        <div className="max-w-4xl w-full space-y-8 text-center my-auto py-8">
+          <div className="space-y-3">
+            <span className="px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/30 inline-block shadow-xs">
+              🎯 CBT Simulation Center • පරිගණක අනුහුරු විභාග
+            </span>
+            <h2 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
+              විභාග වර්ගය තෝරන්න (Select Examination)
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-300 max-w-xl mx-auto leading-relaxed">
+              මෙහිදී කිසිදු විභාගයක් ස්වයංක්‍රීයව විවෘත නොවේ. කරුණාකර ඔබට අවශ්‍ය විභාග වර්ගය ආරම්භ කිරීමට පහත බොත්තම් 2න් එකක් ක්ලික් කරන්න:
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-left pt-2">
+            {/* 1. Agriculture Mock Test Card & Button */}
+            <div
+              onClick={() => setMockExamType("agriculture")}
+              className="bg-[#262626] hover:bg-[#2c2c2c] border-2 border-[#3d3d3d] hover:border-[#608038] rounded-3xl p-6 sm:p-8 transition-all duration-200 cursor-pointer shadow-xl hover:shadow-[#608038]/20 flex flex-col justify-between group hover:-translate-y-1"
+            >
+              <div className="space-y-4">
+                <div className="w-14 h-14 rounded-2xl bg-[#608038]/20 border border-[#608038]/40 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
+                  🌱
+                </div>
+                <div>
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-[#8fa76c]">
+                    SSW Skill Assessment Test (ASAT)
+                  </div>
+                  <h3 className="text-xl sm:text-2xl font-black text-white mt-0.5">
+                    Agriculture Mock Test
+                  </h3>
+                  <p className="text-xs text-slate-300 font-semibold mt-1">
+                    කෘෂිකාර්මික නිපුණතා CBT අනුහුරුකරණ විභාග
+                  </p>
+                </div>
+                <ul className="space-y-2 text-xs text-slate-300 border-t border-[#383838] pt-4">
+                  <li className="flex items-center gap-2">
+                    <span className="text-[#8fa76c] font-black">✓</span> 10 Complete Examination Papers (ප්‍රශ්න 450ක්)
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-[#8fa76c] font-black">✓</span> නිල විභාග කාල සීමාව: විනාඩි 60 ටයිමරය
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-[#8fa76c] font-black">✓</span> 65% සමත් ලකුණු මට්ටම සහ සවිස්තර පැහැදිලි කිරීම්
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-[#8fa76c] font-black">✓</span> Real Prometric CBT Navigation & Flagging
+                  </li>
+                </ul>
+              </div>
+
+              <div className="mt-8 pt-4 border-t border-[#383838]">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMockExamType("agriculture");
+                  }}
+                  className="w-full py-3.5 px-4 bg-[#608038] hover:bg-[#719742] text-white rounded-2xl font-black text-xs sm:text-sm transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer group-hover:shadow-[#608038]/40"
+                >
+                  <span>🌱 Agriculture Mock Test අරඹන්න</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* 2. JFT Mock Test Card & Button */}
+            <div
+              onClick={() => setMockExamType("jft")}
+              className="bg-[#262626] hover:bg-[#2c2c2c] border-2 border-[#3d3d3d] hover:border-blue-500 rounded-3xl p-6 sm:p-8 transition-all duration-200 cursor-pointer shadow-xl hover:shadow-blue-500/20 flex flex-col justify-between group hover:-translate-y-1"
+            >
+              <div className="space-y-4">
+                <div className="w-14 h-14 rounded-2xl bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
+                  🇯🇵
+                </div>
+                <div>
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-blue-400">
+                    Japan Foundation Test for Basic Japanese
+                  </div>
+                  <h3 className="text-xl sm:text-2xl font-black text-white mt-0.5">
+                    JFT-Basic A2 Mock Test
+                  </h3>
+                  <p className="text-xs text-slate-300 font-semibold mt-1">
+                    ජපන් පදනම් A2 CBT පරිගණක විභාග
+                  </p>
+                </div>
+                <ul className="space-y-2 text-xs text-slate-300 border-t border-[#383838] pt-4">
+                  <li className="flex items-center gap-2">
+                    <span className="text-blue-400 font-black">✓</span> අංශ 5ක් යටතේ සම්පූර්ණ ප්‍රශ්නාවලි Sets 50ක්
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-blue-400 font-black">✓</span> අක්ෂර, වචන, සංවාද, සවන්දීම සහ කියවීම
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-blue-400 font-black">✓</span> සැබෑ ශ්‍රව්‍ය ධාවකය (Real Audio Player)
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-blue-400 font-black">✓</span> නිල පෙළපොත් සහ වීඩියෝ වල නිවැරදි රූප සටහන්
+                  </li>
+                </ul>
+              </div>
+
+              <div className="mt-8 pt-4 border-t border-[#383838]">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMockExamType("jft");
+                  }}
+                  className="w-full py-3.5 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black text-xs sm:text-sm transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer group-hover:shadow-blue-500/40"
+                >
+                  <span>🇯🇵 JFT Mock Test අරඹන්න</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div
-      ref={containerRef}
-      className="w-full bg-[#111111] text-slate-900 flex flex-col items-center justify-start select-none min-h-screen font-sans"
-    >
-      {/* Paper Switcher Quick Bar (Allows switching across all 10 Papers) */}
-      <div className="w-full bg-[#181818] border-b border-[#2d2d2d] px-3 sm:px-6 py-2 flex items-center justify-between text-xs text-slate-300">
-        <div className="flex items-center gap-2">
-          <span className="font-bold text-amber-400">📄 Paper Set:</span>
+    <div className="min-h-screen bg-[#242424] text-slate-100 flex flex-col items-center select-none pb-12 font-sans">
+      {/* Top Main Examination Type Switcher */}
+      <div className="w-full bg-[#181818] border-b border-[#2d2d2d] px-3 sm:px-6 py-3 flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => setMockExamType(null)}
+          className="py-2 px-3 rounded-xl text-xs font-black text-slate-300 hover:text-white bg-[#262626] hover:bg-[#333] border border-[#3d3d3d] transition-all cursor-pointer flex items-center gap-1.5 shrink-0 shadow-xs"
+          title="විභාග තේරීමේ තිරයට ආපසු යන්න"
+        >
+          <ChevronLeft className="w-4 h-4" />
+          <span className="hidden sm:inline">විභාග තේරීමට</span>
+        </button>
+        <div className="flex gap-2 bg-[#262626] p-1.5 rounded-2xl border border-[#3d3d3d] max-w-xl w-full shadow-md">
+          <button
+            type="button"
+            onClick={() => setMockExamType("agriculture")}
+            className={`flex-1 py-2.5 px-3 sm:px-4 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 sm:gap-2 ${
+              mockExamType === "agriculture"
+                ? "bg-[#608038] text-white shadow-sm ring-2 ring-[#608038]/30"
+                : "text-slate-300 hover:text-white hover:bg-white/10"
+            }`}
+          >
+            <span>🌱 Agriculture Mock Test (කෘෂිකාර්මික)</span>
+            <span
+              className={`text-[10px] px-1.5 py-0.2 rounded-md ${
+                mockExamType === "agriculture" ? "bg-white/20 text-white" : "bg-[#181818] text-slate-400"
+              }`}
+            >
+              10 Papers
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setMockExamType("jft")}
+            className={`flex-1 py-2.5 px-3 sm:px-4 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 sm:gap-2 ${
+              mockExamType === "jft"
+                ? "bg-[#1d4ed8] text-white shadow-sm ring-2 ring-blue-500/30"
+                : "text-slate-300 hover:text-white hover:bg-white/10"
+            }`}
+          >
+            <span>🇯🇵 JFT Mock Test (ජපන් පදනම්)</span>
+            <span
+              className={`text-[10px] px-1.5 py-0.2 rounded-md ${
+                mockExamType === "jft" ? "bg-white/20 text-white" : "bg-[#181818] text-slate-400"
+              }`}
+            >
+              5 Categories • 50 Sets
+            </span>
+          </button>
+        </div>
+        <div className="w-12 sm:w-24 shrink-0"></div>
+      </div>
+
+      {mockExamType === "jft" ? (
+        <div className="w-full max-w-[1240px] my-4 p-2 sm:p-4">
+          <JFTMockTestsView userProfile={userProfile} />
+        </div>
+      ) : (
+        <>
+          {/* Paper Switcher Quick Bar (Allows switching across all 10 Papers) */}
+          <div className="w-full bg-[#181818] border-b border-[#2d2d2d] px-3 sm:px-6 py-2 flex items-center justify-between text-xs text-slate-300">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-amber-400">📄 Paper Set:</span>
           <span className="font-mono font-bold text-white bg-[#262626] px-2 py-0.5 rounded border border-[#3d3d3d]">
             {activePaper.title}
           </span>
@@ -190,69 +425,131 @@ export function MockTestsView({ userProfile }: MockTestsViewProps) {
         </button>
       </div>
 
+      {/* Mobile Phone Landscape & Full Screen Assistant Banner */}
+      {!isFullScreen && (
+        <div className="w-full max-w-[1240px] bg-slate-900 border border-slate-700 p-2.5 px-4 rounded-xl flex items-center justify-between gap-3 text-xs text-slate-200 shadow-sm my-2">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 shrink-0">
+              <Smartphone className="w-4 h-4 rotate-90" />
+            </div>
+            <div>
+              <span className="font-bold text-white">📱 Phone Landscape & Full Screen:</span>{" "}
+              <span className="text-slate-300">
+                පහත CBT විභාග තිරය පමණක් <strong>Full Screen</strong> කර Phone එක <strong>Landscape (තිරස් අතට)</strong> හරවා සැබෑ CBT පරිගණක විභාගයක් පරිදිම පහසුවෙන් භාවිතා කරන්න.
+              </span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={toggleFullScreen}
+            className="px-3.5 py-1.5 bg-[#608038] hover:bg-[#6e9340] text-white rounded-lg text-xs font-black flex items-center gap-1.5 shrink-0 transition cursor-pointer shadow-xs active:scale-95"
+          >
+            <Maximize className="w-3.5 h-3.5 text-amber-300" />
+            <span>Full Screen (පූර්ණ තිරය)</span>
+          </button>
+        </div>
+      )}
+
+      {/* Floating Portrait Hint in Fullscreen */}
+      {isFullScreen && (
+        <div className="hidden portrait:flex fixed top-16 left-1/2 -translate-x-1/2 z-[100000] bg-amber-500 text-slate-950 px-3.5 py-1.5 rounded-full text-xs font-black shadow-2xl items-center gap-2 animate-bounce pointer-events-none border border-amber-300">
+          <Smartphone className="w-4 h-4 rotate-90" />
+          <span>Phone එක Landscape (තිරස් අතට) හරවන්න</span>
+        </div>
+      )}
+
       {/* ========================================================================= */}
       {/* AUTHENTIC CBT MONITOR CONTAINER (EXACT 1:1 REPLICATION OF SCREENSHOT)   */}
       {/* ========================================================================= */}
-      <div className="w-full max-w-[1240px] flex flex-col bg-[#ffffff] shadow-2xl border-4 border-[#000000] my-2">
-
+      <div
+        ref={containerRef}
+        id="cbt-monitor-agriculture-view"
+        className={`transition-all duration-200 select-none ${
+          isFullScreen
+            ? "fixed inset-0 z-[99999] w-screen h-[100dvh] max-w-none m-0 border-0 rounded-none bg-white flex flex-col overflow-hidden"
+            : "w-full max-w-[1240px] flex flex-col bg-[#ffffff] shadow-2xl border-4 border-[#000000] my-2 min-h-[560px] h-[680px] max-h-[86vh] overflow-hidden"
+        }`}
+      >
         {/* -------------------- 1. TOP BAR (BLACK #000000) -------------------- */}
-        <div className="w-full bg-[#000000] text-white h-[48px] px-4 sm:px-6 flex items-center justify-between">
+        <div className="w-full bg-[#000000] text-white min-h-[42px] h-[44px] landscape:min-h-[36px] landscape:h-[36px] px-2.5 sm:px-5 py-0.5 sm:py-1 flex items-center justify-between border-b border-black shrink-0">
           
           {/* Left: Question: 15 */}
-          <div className="flex items-center text-sm sm:text-base font-normal tracking-wide">
+          <div className="flex items-center text-xs sm:text-base landscape:text-xs font-normal tracking-wide">
             <span>Question:</span>
-            <span className="ml-3 sm:ml-4 font-bold text-white text-base sm:text-lg">
+            <span className="ml-2 sm:ml-3 font-bold text-white text-sm sm:text-lg landscape:text-sm">
               {currentQuestion.id}
             </span>
           </div>
 
           {/* Center: Total Test Time Remaining 00 : 00 : 00 */}
-          <div className="flex items-center gap-2 text-white">
-            <div className="w-5 h-5 rounded-full border border-white flex items-center justify-center">
-              <Clock className="w-3 h-3 text-white" />
+          <div className="flex items-center gap-1.5 sm:gap-2 text-white">
+            <div className="w-4 h-4 sm:w-5 sm:h-5 rounded-full border border-white flex items-center justify-center shrink-0">
+              <Clock className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-white" />
             </div>
             <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2 leading-none text-center">
-              <span className="text-[10px] sm:text-xs text-white/90">Total Test Time Remaining</span>
-              <span className="font-mono text-xs sm:text-sm font-bold tracking-wider text-white">
+              <span className="text-[7.5px] sm:text-xs landscape:text-[7.5px] text-white/90">Total Test Time Remaining</span>
+              <span className="font-mono text-xs sm:text-sm landscape:text-xs font-bold tracking-wider text-white">
                 {formattedTimer}
               </span>
             </div>
           </div>
 
-          {/* Right: Finish Section (Amber/Yellow rounded button) */}
-          <button
-            type="button"
-            onClick={() => setIsFinishConfirmOpen(true)}
-            className="bg-[#fac457] hover:bg-[#f3be4c] active:bg-[#e6b13e] text-[#000000] px-4 py-1.5 rounded-sm font-bold text-xs sm:text-sm shadow-xs transition cursor-pointer"
-          >
-            Finish Section
-          </button>
+          {/* Right: Full Screen & Finish Section (Amber/Yellow rounded button) */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <button
+              type="button"
+              onClick={toggleFullScreen}
+              className="bg-[#242424] hover:bg-[#333333] active:bg-[#1a1a1a] text-white border border-[#444444] px-2 sm:px-2.5 py-1 rounded-xs font-bold text-xs landscape:text-[11px] flex items-center gap-1 transition cursor-pointer shrink-0 shadow-xs"
+              title={isFullScreen ? "Exit Full Screen" : "Full Screen (පූර්ණ තිරය)"}
+            >
+              {isFullScreen ? (
+                <>
+                  <Minimize className="w-3.5 h-3.5 text-amber-300" />
+                  <span className="hidden sm:inline landscape:inline">Exit Full Screen</span>
+                </>
+              ) : (
+                <>
+                  <Maximize className="w-3.5 h-3.5 text-amber-300" />
+                  <span className="hidden sm:inline landscape:inline">Full Screen</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsFinishConfirmOpen(true)}
+              className="bg-[#fac457] hover:bg-[#f3be4c] active:bg-[#e6b13e] text-[#000000] px-2.5 sm:px-4 py-1 rounded-xs font-bold text-xs sm:text-sm landscape:text-xs shadow-xs transition cursor-pointer shrink-0"
+            >
+              Finish Section
+            </button>
+          </div>
         </div>
 
         {/* -------------------- 2. SUB-HEADER BANNER (OLIVE GREEN #608038) -------------------- */}
-        <div className="w-full bg-[#608038] text-white h-[26px] px-4 sm:px-6 flex items-center justify-between text-xs font-medium tracking-wide">
-          <div className="flex items-center gap-1.5">
+        <div className="w-full bg-[#608038] text-white h-[24px] sm:h-[26px] landscape:h-[22px] px-3 sm:px-6 flex items-center justify-between text-[11px] sm:text-xs landscape:text-[10px] font-medium tracking-wide shrink-0">
+          <div className="flex items-center gap-1.5 truncate">
             <span className="font-bold">Test:</span>
-            <span>General Crop Farming</span>
+            <span className="truncate">General Crop Farming (කෘෂිකර්ම විභාගය)</span>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0">
             <span className="font-bold">Candidate:</span>
             <span className="font-medium">{candidateDisplayName}</span>
           </div>
         </div>
 
         {/* -------------------- 3. MAIN QUESTION & TEST AREA -------------------- */}
-        <div className="w-full flex min-h-[460px] sm:min-h-[500px] relative bg-white overflow-hidden">
+        <div className="flex-1 min-h-0 w-full flex relative bg-white overflow-hidden">
           
           {/* Subtle DS Watermark in Background (Matching screenshot) */}
-          <div className="absolute inset-0 pointer-events-none flex items-center justify-around opacity-[0.06] select-none">
-            <span className="font-serif font-black text-8xl text-slate-800 tracking-widest">DS</span>
-            <span className="font-serif font-black text-9xl text-slate-800 tracking-widest">DS</span>
-            <span className="font-serif font-black text-8xl text-slate-800 tracking-widest">DS</span>
+          <div className="absolute inset-0 pointer-events-none flex items-center justify-around opacity-[0.05] select-none">
+            <span className="font-serif font-black text-7xl sm:text-8xl text-slate-800 tracking-widest">DS</span>
+            <span className="font-serif font-black text-8xl sm:text-9xl text-slate-800 tracking-widest">DS</span>
+            <span className="font-serif font-black text-7xl sm:text-8xl text-slate-800 tracking-widest">DS</span>
           </div>
 
           {/* LEFT VERTICAL QUESTION NAV STRIP (11, 12, 13, 14, 15, 16, 17, 18, 19, 20...) */}
-          <div className="w-[46px] sm:w-[50px] bg-[#f5f5f5] border-r border-[#d4d4d4] flex flex-col shrink-0 py-1 overflow-y-auto max-h-[500px] scrollbar-thin">
+          <div className="w-[42px] sm:w-[50px] landscape:w-[40px] bg-[#f5f5f5] border-r border-[#d4d4d4] flex flex-col shrink-0 py-1 overflow-y-auto h-full scrollbar-thin select-none">
             {sidebarQuestions.map((q, idx) => {
               const isCurrent = currentQuestionIndex === idx;
               const isAnswered = userAnswers[q.id] !== undefined;
@@ -276,11 +573,11 @@ export function MockTestsView({ userProfile }: MockTestsViewProps) {
                   key={q.id}
                   type="button"
                   onClick={() => setCurrentQuestionIndex(idx)}
-                  className={`w-[40px] sm:w-[44px] h-[22px] my-[1px] ml-[2px] rounded-r-sm text-[11px] font-bold flex items-center justify-center transition cursor-pointer relative ${tabBg}`}
+                  className={`w-[36px] sm:w-[44px] landscape:w-[34px] h-[20px] sm:h-[22px] landscape:h-[18px] my-[1px] ml-[2px] rounded-r-xs text-[10px] sm:text-[11px] landscape:text-[9.5px] font-bold flex items-center justify-center transition cursor-pointer relative shrink-0 ${tabBg}`}
                   title={`Question ${q.id}: ${q.topic}`}
                 >
                   {/* Small top-left fold notch like physical tab in screenshot */}
-                  <span className="absolute top-0 left-0 w-[3px] h-[3px] bg-black/30"></span>
+                  <span className="absolute top-0 left-0 w-[2.5px] h-[2.5px] bg-black/30"></span>
                   <span>{q.id}</span>
                 </button>
               );
@@ -288,14 +585,14 @@ export function MockTestsView({ userProfile }: MockTestsViewProps) {
           </div>
 
           {/* CENTER TEST CONTENT AREA */}
-          <div className="flex-1 flex flex-col justify-between p-4 sm:p-6 relative z-10">
+          <div className="flex-1 min-h-0 flex flex-col justify-between p-2.5 sm:p-5 landscape:p-2.5 overflow-y-auto relative z-10">
             
             {/* Top Container: Question Box & Language Buttons */}
-            <div className="space-y-3">
+            <div className="space-y-2 sm:space-y-3">
               
               {/* Question Blue Box (Soft baby blue #dbe6f3 matching screenshot) */}
-              <div className="w-full bg-[#dbe6f3] border border-[#cbd5e1] p-3 sm:p-4 rounded-xs shadow-2xs">
-                <p className="text-[#0f172a] text-sm sm:text-[15px] font-medium leading-relaxed font-sans">
+              <div className="w-full bg-[#dbe6f3] border border-[#cbd5e1] p-2.5 sm:p-4 landscape:p-2 rounded-xs shadow-2xs">
+                <p className="text-[#0f172a] text-xs sm:text-[15px] landscape:text-xs font-medium leading-relaxed font-sans">
                   {activeLanguage === "language2"
                     ? currentQuestion.questionSi
                     : currentQuestion.questionJp}
@@ -303,42 +600,42 @@ export function MockTestsView({ userProfile }: MockTestsViewProps) {
               </div>
 
               {/* Language 1 & Language 2 Toggles (Matching screenshot buttons) */}
-              <div className="flex items-center gap-2 pt-0.5">
+              <div className="flex items-center gap-1.5 sm:gap-2 pt-0.5">
                 <button
                   type="button"
                   onClick={() => setActiveLanguage("language1")}
-                  className={`px-2 py-1 rounded-xs border text-[11px] font-medium flex items-center gap-1.5 transition cursor-pointer shadow-3xs ${
+                  className={`px-2 py-0.5 sm:py-1 rounded-xs border text-[10px] sm:text-[11px] landscape:text-[10px] font-medium flex items-center gap-1 sm:gap-1.5 transition cursor-pointer shadow-3xs ${
                     activeLanguage === "language1"
                       ? "bg-[#608038] text-white border-[#608038] font-bold"
                       : "bg-[#ffffff] text-[#333333] border-[#a3a3a3] hover:bg-slate-100"
                   }`}
                 >
-                  <ImageIcon className="w-3.5 h-3.5 opacity-70" />
+                  <ImageIcon className="w-3 h-3 sm:w-3.5 sm:h-3.5 opacity-70" />
                   <span>Your Language 1</span>
-                  <ExternalLink className="w-3 h-3 opacity-60" />
+                  <ExternalLink className="w-2.5 h-2.5 sm:w-3 sm:h-3 opacity-60" />
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setActiveLanguage("language2")}
-                  className={`px-2 py-1 rounded-xs border text-[11px] font-medium flex items-center gap-1.5 transition cursor-pointer shadow-3xs ${
+                  className={`px-2 py-0.5 sm:py-1 rounded-xs border text-[10px] sm:text-[11px] landscape:text-[10px] font-medium flex items-center gap-1 sm:gap-1.5 transition cursor-pointer shadow-3xs ${
                     activeLanguage === "language2"
                       ? "bg-[#608038] text-white border-[#608038] font-bold"
                       : "bg-[#ffffff] text-[#333333] border-[#a3a3a3] hover:bg-slate-100"
                   }`}
                 >
-                  <ImageIcon className="w-3.5 h-3.5 opacity-70" />
+                  <ImageIcon className="w-3 h-3 sm:w-3.5 sm:h-3.5 opacity-70" />
                   <span>Your Language 2</span>
-                  <ExternalLink className="w-3 h-3 opacity-60" />
+                  <ExternalLink className="w-2.5 h-2.5 sm:w-3 sm:h-3 opacity-60" />
                 </button>
 
-                <span className="text-[10px] text-slate-500 font-mono ml-2">
+                <span className="text-[9.5px] sm:text-[10px] text-slate-500 font-mono ml-1 sm:ml-2">
                   (Language 1: 日本語 • Language 2: සිංහල)
                 </span>
               </div>
 
               {/* CHOICES / OPTIONS (Clean Rectangular Boxes with Black Border, matching screenshot) */}
-              <div className="pt-6 sm:pt-8 space-y-3.5 max-w-[500px]">
+              <div className="pt-2 sm:pt-6 landscape:pt-2 space-y-2 sm:space-y-3.5 max-w-[560px]">
                 {currentQuestion.options.map((option) => {
                   const isSelected = userAnswers[currentQuestion.id] === option.id;
 
@@ -346,13 +643,13 @@ export function MockTestsView({ userProfile }: MockTestsViewProps) {
                     <div
                       key={option.id}
                       onClick={() => handleSelectOption(option.id)}
-                      className={`w-full min-h-[38px] px-4 py-2 border border-[#000000] transition cursor-pointer flex items-center rounded-xs ${
+                      className={`w-full min-h-[34px] sm:min-h-[38px] landscape:min-h-[30px] px-3 sm:px-4 py-1.5 sm:py-2 border border-[#000000] transition cursor-pointer flex items-center rounded-xs ${
                         isSelected
                           ? "bg-[#eaf1fb] border-2 border-[#1e40af] shadow-xs"
                           : "bg-[#ffffff] hover:bg-[#fbfbfb]"
                       }`}
                     >
-                      <span className="text-[#000000] text-xs sm:text-sm font-medium tracking-wide">
+                      <span className="text-[#000000] text-xs sm:text-sm landscape:text-xs font-medium tracking-wide">
                         {activeLanguage === "language2" ? option.textSi : option.textJp}
                       </span>
                     </div>
@@ -363,15 +660,15 @@ export function MockTestsView({ userProfile }: MockTestsViewProps) {
             </div>
 
             {/* BOTTOM RIGHT ASAT LOGO (Matching screenshot exactly) */}
-            <div className="self-end mt-6 select-none flex flex-col items-center text-center">
-              <div className="font-black text-3xl sm:text-4xl text-[#000000] tracking-tighter leading-none font-sans">
+            <div className="self-end mt-2 sm:mt-6 select-none flex flex-col items-center text-center">
+              <div className="font-black text-2xl sm:text-4xl landscape:text-2xl text-[#000000] tracking-tighter leading-none font-sans">
                 ASAT
               </div>
-              <div className="w-full h-[1.5px] bg-[#000000] my-1"></div>
-              <div className="text-[10px] sm:text-[11px] font-bold text-[#000000] tracking-tight leading-none uppercase">
+              <div className="w-full h-[1.5px] bg-[#000000] my-0.5 sm:my-1"></div>
+              <div className="text-[9px] sm:text-[11px] landscape:text-[8.5px] font-bold text-[#000000] tracking-tight leading-none uppercase">
                 Agriculture Skill Assessment Test
               </div>
-              <div className="text-[8px] text-[#444444] font-medium leading-tight mt-0.5">
+              <div className="text-[7.5px] sm:text-[8px] text-[#444444] font-medium leading-tight mt-0.5">
                 Hosted by National Chamber of Agriculture
               </div>
             </div>
@@ -381,17 +678,17 @@ export function MockTestsView({ userProfile }: MockTestsViewProps) {
         </div>
 
         {/* -------------------- 4. BOTTOM BAR (BLACK #000000) -------------------- */}
-        <div className="w-full bg-[#000000] text-white h-[46px] px-3 sm:px-6 flex items-center justify-between">
+        <div className="w-full bg-[#000000] text-white min-h-[40px] h-[42px] landscape:min-h-[36px] landscape:h-[36px] px-2.5 sm:px-6 py-0.5 sm:py-1 flex items-center justify-between shrink-0 border-t border-black">
           
           {/* Left Controls: Gear, Grid, Question-mark (White icons) */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3">
             <button
               type="button"
               onClick={() => setIsPaperSelectOpen(true)}
               className="p-1 hover:text-emerald-400 transition cursor-pointer text-white"
               title="Settings & Paper Selector"
             >
-              <Settings className="w-5 h-5" />
+              <Settings className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
 
             <button
@@ -400,7 +697,20 @@ export function MockTestsView({ userProfile }: MockTestsViewProps) {
               className="p-1 hover:text-emerald-400 transition cursor-pointer text-white"
               title="Questions Overview Grid"
             >
-              <Grid className="w-5 h-5" />
+              <Grid className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={toggleFullScreen}
+              className="p-1 hover:text-emerald-400 transition cursor-pointer text-white"
+              title={isFullScreen ? "Exit Full Screen" : "Full Screen (පූර්ණ තිරය)"}
+            >
+              {isFullScreen ? (
+                <Minimize className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300" />
+              ) : (
+                <Maximize className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300" />
+              )}
             </button>
 
             <button
@@ -409,25 +719,25 @@ export function MockTestsView({ userProfile }: MockTestsViewProps) {
               className="p-1 hover:text-emerald-400 transition cursor-pointer text-white"
               title="Exam Help & Guidelines"
             >
-              <HelpCircle className="w-5 h-5" />
+              <HelpCircle className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
           </div>
 
           {/* Right Controls: Green Flag, < Back, Next > */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             
             {/* Green Flag Button */}
             <button
               type="button"
               onClick={handleToggleFlag}
-              className={`w-[36px] h-[30px] rounded flex items-center justify-center transition cursor-pointer ${
+              className={`w-[32px] sm:w-[36px] h-[28px] sm:h-[30px] rounded flex items-center justify-center transition cursor-pointer ${
                 flaggedQuestions[currentQuestion.id]
                   ? "bg-[#d97706] hover:bg-[#b45309]"
                   : "bg-[#608038] hover:bg-[#6c8f40]"
               }`}
               title="Flag / Mark for Review"
             >
-              <Flag className="w-4 h-4 text-white fill-white" />
+              <Flag className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white fill-white" />
             </button>
 
             {/* < Back Button (Olive green #608038) */}
@@ -435,7 +745,7 @@ export function MockTestsView({ userProfile }: MockTestsViewProps) {
               type="button"
               disabled={currentQuestionIndex === 0}
               onClick={() => setCurrentQuestionIndex((prev) => Math.max(0, prev - 1))}
-              className="px-4 py-1.5 bg-[#608038] hover:bg-[#6c8f40] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded font-bold text-xs sm:text-sm transition cursor-pointer flex items-center gap-1"
+              className="px-3 sm:px-4 py-1 sm:py-1.5 bg-[#608038] hover:bg-[#6c8f40] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded font-bold text-xs sm:text-sm landscape:text-xs transition cursor-pointer flex items-center gap-1"
             >
               <span>&lt; Back</span>
             </button>
@@ -445,13 +755,11 @@ export function MockTestsView({ userProfile }: MockTestsViewProps) {
               type="button"
               disabled={currentQuestionIndex === activePaper.totalQuestions - 1}
               onClick={() => setCurrentQuestionIndex((prev) => Math.min(activePaper.totalQuestions - 1, prev + 1))}
-              className="px-4 py-1.5 bg-[#608038] hover:bg-[#6c8f40] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded font-bold text-xs sm:text-sm transition cursor-pointer flex items-center gap-1"
+              className="px-3 sm:px-4 py-1 sm:py-1.5 bg-[#608038] hover:bg-[#6c8f40] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded font-bold text-xs sm:text-sm landscape:text-xs transition cursor-pointer flex items-center gap-1"
             >
               <span>Next &gt;</span>
             </button>
-
           </div>
-
         </div>
 
       </div>
@@ -881,8 +1189,9 @@ export function MockTestsView({ userProfile }: MockTestsViewProps) {
                 );
               })}
           </div>
-
         </div>
+      )}
+      </>
       )}
 
     </div>

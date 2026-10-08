@@ -10,6 +10,8 @@ import { PRELOADED_GRAMMAR } from "../data/preloadedGrammar";
 export default function DictionaryView() {
   const [searchQuery, setSearchQuery] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<"ALL" | "KANJI" | "VERBS" | "ADJECTIVES" | "GRAMMAR">("ALL");
+  const [kanjiLevelFilter, setKanjiLevelFilter] = useState<"ALL" | "JFT" | "N5" | "N4" | "N3">("ALL");
 
   // Soft pronunciation helper using Web Speech Synthesis
   const handleTTS = (text: string) => {
@@ -46,16 +48,17 @@ export default function DictionaryView() {
 
     // 2. Add Kanji cards mapped as dictionary entries
     PRELOADED_KANJI.forEach((k) => {
+      const lvl = k.level || (k.id.startsWith("n3") ? "N3" : (k.indexNumber && k.indexNumber <= 150 ? "N5" : "N4"));
       combined.push({
         id: `kanji-${k.id}`,
         romaji: k.kunyomi || k.onyomi || "",
         kanji: k.kanji,
         hiragana: k.furigana,
-        onyomi: k.onyomi,
-        kunyomi: k.kunyomi,
+        onyomi: `Kanji [${lvl}]${k.lesson ? ` • ${k.lesson}` : ""}`,
+        kunyomi: k.kunyomi || k.onyomi,
         sinhalaMeaning: k.sinhalaMeaning,
         englishMeaning: k.englishMeaning || "Kanji Meaning",
-        searchKeywords: ["kanji", "character", "letter", k.sinhalaMeaning, k.englishMeaning, k.furigana, k.kunyomi]
+        searchKeywords: ["kanji", lvl.toLowerCase(), "character", "letter", k.sinhalaMeaning, k.englishMeaning, k.furigana, k.kunyomi, k.lesson || ""]
       });
     });
 
@@ -109,10 +112,33 @@ export default function DictionaryView() {
 
   // Perform multi-dimensional search across hiragana, romaji, kanji, english, sinhala meanings & search keywords
   const filteredEntries = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return allDictionaryEntries;
+    let list = allDictionaryEntries;
 
-    return allDictionaryEntries.filter((item) => {
+    if (categoryFilter !== "ALL") {
+      if (categoryFilter === "KANJI") {
+        list = list.filter((item) => item.id.startsWith("kanji-"));
+        if (kanjiLevelFilter !== "ALL") {
+          list = list.filter((item) => {
+            const cardId = item.id.replace("kanji-", "");
+            if (kanjiLevelFilter === "N3") return cardId.startsWith("n3");
+            if (kanjiLevelFilter === "JFT") return !cardId.startsWith("n3");
+            const match = PRELOADED_KANJI.find((c) => c.id === cardId);
+            return match?.level === kanjiLevelFilter;
+          });
+        }
+      } else if (categoryFilter === "VERBS") {
+        list = list.filter((item) => item.id.startsWith("verb-"));
+      } else if (categoryFilter === "ADJECTIVES") {
+        list = list.filter((item) => item.id.startsWith("adj-"));
+      } else if (categoryFilter === "GRAMMAR") {
+        list = list.filter((item) => item.id.startsWith("grammar-"));
+      }
+    }
+
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return list;
+
+    return list.filter((item) => {
       const matchesRomaji = item.romaji.toLowerCase().includes(query);
       const matchesKanji = item.kanji.toLowerCase().includes(query);
       const matchesHiragana = item.hiragana.toLowerCase().includes(query);
@@ -129,7 +155,7 @@ export default function DictionaryView() {
         matchesKeywords
       );
     });
-  }, [searchQuery, allDictionaryEntries]);
+  }, [searchQuery, categoryFilter, kanjiLevelFilter, allDictionaryEntries]);
 
   // Paginated/sliced search results to keep typing and rendering extremely fast and responsive
   const displayedEntries = useMemo(() => {
@@ -142,7 +168,7 @@ export default function DictionaryView() {
       <div className="flex flex-col md:flex-row md:items-center justify-between border-b pb-6 border-dashed border-[#e9e2d7] gap-4">
         <div className="space-y-1.5">
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black bg-teal-50 text-teal-750 uppercase tracking-wider border border-teal-100">
-            <BookMarked className="w-3.5 h-3.5 text-teal-600" /> Unified JFT & N4 Dictionary • බහුභාෂා ශබ්දකෝෂය
+            <BookMarked className="w-3.5 h-3.5 text-teal-600" /> Unified JFT, N5, N4 & N3 Dictionary • බහුභාෂා ශබ්දකෝෂය
           </span>
           <h2 className="text-3xl font-black text-slate-800 font-display tracking-tight">
             Comprehensive Vocabulary & Grammar Search
@@ -154,7 +180,7 @@ export default function DictionaryView() {
       </div>
 
       {/* Advanced Unified Multi-language Search Bar */}
-      <div className="bg-white p-5 rounded-[28px] border border-[#e9e2d7] shadow-sm space-y-3">
+      <div className="bg-white p-5 rounded-[28px] border border-[#e9e2d7] shadow-sm space-y-4">
         <div className="relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-teal-600" />
           <input
@@ -165,11 +191,52 @@ export default function DictionaryView() {
             className="w-full text-sm rounded-2xl border border-[#e9e2d7] pl-12 pr-4 py-3.5 bg-[#fdfbf7] focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-teal-600/10 focus:border-teal-600 font-semibold"
           />
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 font-semibold">
-          <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md">🇯🇵 Kanji / Hiragana</span>
-          <span className="bg-teal-5s px-2 py-0.5 rounded-md bg-teal-50 text-teal-800 border border-teal-100/50">🇬🇧 English Translation</span>
-          <span className="bg-amber-50 text-amber-800 px-2 py-0.5 rounded-md border border-amber-100">🇱🇰 සිංහල අර්ථය</span>
-          <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md">🔡 Singlish Phonetics</span>
+
+        {/* Category Filter Pills */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-[#f0ede6]">
+          <div className="flex flex-wrap items-center gap-1.5 p-1 bg-[#f0ede6] rounded-2xl border border-[#e9e2d7]">
+            {[
+              { key: "ALL", label: "🌟 All Categories" },
+              { key: "KANJI", label: "🈯 Kanji (කන්ජි)" },
+              { key: "VERBS", label: "⚡ Verbs (ක්‍රියාපද)" },
+              { key: "ADJECTIVES", label: "🎨 Adjectives (විශේෂණ)" },
+              { key: "GRAMMAR", label: "📖 Grammar (ව්‍යාකරණ)" }
+            ].map((cat) => (
+              <button
+                key={cat.key}
+                type="button"
+                onClick={() => setCategoryFilter(cat.key as any)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                  categoryFilter === cat.key
+                    ? "bg-[#52796f] text-white shadow-xs"
+                    : "text-[#52796f] hover:bg-white/60"
+                }`}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Sub-filter for Kanji Level when Kanji is active */}
+          {categoryFilter === "KANJI" && (
+            <div className="flex items-center gap-1 bg-purple-50 p-1 rounded-xl border border-purple-200">
+              <span className="text-[10px] font-black text-purple-900 px-2">Level:</span>
+              {(["ALL", "JFT", "N5", "N4", "N3"] as const).map((lvl) => (
+                <button
+                  key={lvl}
+                  type="button"
+                  onClick={() => setKanjiLevelFilter(lvl)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-black transition cursor-pointer ${
+                    kanjiLevelFilter === lvl
+                      ? "bg-purple-700 text-white shadow-xs"
+                      : "text-purple-800 hover:bg-purple-100"
+                  }`}
+                >
+                  {lvl}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { motion } from "motion/react";
-import { Check, AlertCircle, BookOpen, Volume2, ArrowLeftRight } from "lucide-react";
+import { Check, AlertCircle, BookOpen, Volume2, ArrowLeftRight, Layers, Tag } from "lucide-react";
 import { JFTVerb } from "../data/preloadedVerbs";
 import { LearningStatus } from "../types";
 
@@ -68,6 +68,60 @@ export default function VerbCardView({
     }
   };
 
+  const getGroupBadge = () => {
+    switch (verb.group) {
+      case "Group 1":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-sky-50 text-sky-800 border border-sky-200">
+            <Layers className="w-3 h-3 text-sky-600" /> Group 1 (Godan • 1 වන)
+          </span>
+        );
+      case "Group 2":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-200">
+            <Layers className="w-3 h-3 text-emerald-600" /> Group 2 (Ichidan • 2 වන)
+          </span>
+        );
+      case "Group 3":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-50 text-purple-800 border border-purple-200">
+            <Layers className="w-3 h-3 text-purple-600" /> Group 3 (Irregular • 3 වන)
+          </span>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const getLevelBadge = () => {
+    if (verb.level === "N5") {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-300">
+          <Tag className="w-3 h-3 text-rose-600" /> JLPT N5
+        </span>
+      );
+    }
+    if (verb.level === "N4") {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-orange-100 text-orange-800 border border-orange-300">
+          <Tag className="w-3 h-3 text-orange-600" /> JLPT N4
+        </span>
+      );
+    }
+    if (verb.level === "N3") {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-900 border border-purple-300">
+          <Tag className="w-3 h-3 text-purple-700" /> JLPT N3
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-[#cad2c5] text-[#2f3e46] border border-[#84a98c]/40">
+        <Tag className="w-3 h-3 text-[#52796f]" /> JFT-Basic
+      </span>
+    );
+  };
+
   return (
     <div 
       className="relative w-full shrink-0" 
@@ -85,7 +139,7 @@ export default function VerbCardView({
             onReveal();
           }
         }}
-        className={`w-full min-h-[480px] rounded-[32px] border-2 shadow-sm cursor-pointer relative select-none flex flex-col justify-between p-6 ${getStatusColor()}`}
+        className={`w-full min-h-[500px] rounded-[32px] border-2 shadow-sm cursor-pointer relative select-none flex flex-col justify-between p-6 ${getStatusColor()}`}
       >
         {/* --- FRONT SIDE --- */}
         <div 
@@ -94,9 +148,10 @@ export default function VerbCardView({
         >
           {/* Card Top */}
           <div className="flex items-center justify-between w-full border-b border-dashed border-[#e9e2d7] pb-3">
-            <span className="font-mono text-[10px] text-[#84a98c] font-bold uppercase tracking-wider">
-              {practiceMode === "sinhala" ? "සිංහල ➔ ජපන්" : "ජපන් ➔ සිංහල"}
-            </span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {getLevelBadge()}
+              {getGroupBadge()}
+            </div>
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
@@ -115,7 +170,9 @@ export default function VerbCardView({
             {practiceMode === "sinhala" ? (
               // Sinhala front
               <div className="text-center space-y-2">
-                <span className="text-[10px] uppercase font-bold text-[#84a98c] tracking-widest block">සිංහල අර්ථය</span>
+                <span className="text-[10px] uppercase font-bold text-[#84a98c] tracking-widest block">
+                  සිංහල අර්ථය {verb.englishMeaning && `• ${verb.englishMeaning}`}
+                </span>
                 <h3 className="text-3xl font-extrabold text-[#354f52] font-sans tracking-tight">
                   {verb.sinhalaMeaning}
                 </h3>
@@ -141,8 +198,9 @@ export default function VerbCardView({
           </div>
 
           {/* Bottom quick view */}
-          <div className="border-t border-[#e9e2d7] pt-3 text-center">
-            <span className="text-[10px] font-bold text-slate-400">JFT-Basic Verb Card • {verb.id.toUpperCase()}</span>
+          <div className="border-t border-[#e9e2d7] pt-3 flex items-center justify-between text-[10px] font-bold text-slate-400">
+            <span>{verb.level === "N3" ? "JLPT N3 Verb" : "JFT-Basic Verb"} • {verb.id.toUpperCase()}</span>
+            {verb.lesson && <span className="text-[#84a98c]">{verb.lesson}</span>}
           </div>
         </div>
 
@@ -153,9 +211,10 @@ export default function VerbCardView({
         >
           {/* Card Top */}
           <div className="flex items-center justify-between w-full border-b border-[#e9e2d7] pb-3">
-            <span className="font-mono text-[10px] text-[#bc6c25] font-bold uppercase tracking-wider">
-              REVEALED DETAILED VERB
-            </span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {getLevelBadge()}
+              {getGroupBadge()}
+            </div>
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
@@ -183,20 +242,23 @@ export default function VerbCardView({
               </div>
               <h4 className="text-2xl font-bold text-[#2f3e46]">{verb.kanji}</h4>
               <p className="text-lg font-bold text-[#52796f]">{verb.sinhalaMeaning}</p>
+              {verb.englishMeaning && (
+                <p className="text-xs font-semibold text-[#84a98c]">{verb.englishMeaning}</p>
+              )}
             </div>
 
-            {/* JFT 6 Conjugation states GRID */}
+            {/* 6 Conjugation states GRID */}
             <div className="grid grid-cols-2 gap-2 mt-2">
               <div className="p-2 bg-[#fdfbf7] rounded-xl border border-[#e9e2d7] flex flex-col">
-                <span className="text-[9px] font-bold text-[#84a98c] uppercase tracking-wider">masu (මසු)</span>
+                <span className="text-[9px] font-bold text-[#84a98c] uppercase tracking-wider">masu (මසු - ගෞරවාර්ථ)</span>
                 <span className="font-mono text-xs font-extrabold text-[#52796f] mt-0.5 dir-ltr">{verb.masu}</span>
               </div>
               <div className="p-2 bg-[#fdfbf7] rounded-xl border border-[#e9e2d7] flex flex-col">
-                <span className="text-[9px] font-bold text-[#84a98c] uppercase tracking-wider">Dictionary (මූලික)</span>
+                <span className="text-[9px] font-bold text-[#84a98c] uppercase tracking-wider">Dictionary (මූලික/නිශබ්ද)</span>
                 <span className="font-mono text-xs font-extrabold text-[#52796f] mt-0.5 dir-ltr">{verb.dictionary}</span>
               </div>
               <div className="p-2 bg-[#fdfbf7] rounded-xl border border-[#e9e2d7] flex flex-col">
-                <span className="text-[9px] font-bold text-[#84a98c] uppercase tracking-wider">nai (නැත)</span>
+                <span className="text-[9px] font-bold text-[#84a98c] uppercase tracking-wider">nai (නැත - සෘණාත්මක)</span>
                 <span className="font-mono text-xs font-extrabold text-[#bc6c25] mt-0.5 dir-ltr">{verb.nai}</span>
               </div>
               <div className="p-2 bg-[#fdfbf7] rounded-xl border border-[#e9e2d7] flex flex-col">
@@ -208,7 +270,7 @@ export default function VerbCardView({
                 <span className="font-mono text-xs font-extrabold text-[#bc6c25] mt-0.5 dir-ltr">{verb.nakatta}</span>
               </div>
               <div className="p-2 bg-[#fdfbf7] rounded-xl border border-[#e9e2d7] flex flex-col col-span-2">
-                <span className="text-[9px] font-bold text-[#84a98c] uppercase tracking-wider">te (te form)</span>
+                <span className="text-[9px] font-bold text-[#84a98c] uppercase tracking-wider">te (te form - සම්බන්ධක)</span>
                 <span className="font-mono text-xs font-extrabold text-[#52796f] mt-0.5 dir-ltr">{verb.te}</span>
               </div>
             </div>

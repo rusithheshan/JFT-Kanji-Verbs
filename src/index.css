@@ -38,3 +38,24 @@ button, a, select, input, [role="button"] {
   background: #bc6c25;
 }
 
+/* Site-wide Landscape Mode optimizations for mobile phones */
+.site-landscape-active {
+  min-height: 100dvh;
+}
+.site-landscape-active header {
+  padding-top: 0.25rem !important;
+  padding-bottom: 0.25rem !important;
+}
+.site-landscape-active .header-inner-row {
+  padding-top: 0.25rem !important;
+  padding-bottom: 0.25rem !important;
+  gap: 0.5rem !important;
+}
+.site-landscape-active main {
+  padding-top: 0.5rem !important;
+  padding-left: 0.5rem !important;
+  padding-right: 0.5rem !important;
+  max-width: 100% !important;
+}
+
+

@@ -38,15 +38,23 @@ import {
   Link,
   Wheat,
   Gamepad2,
-  FileCheck
+  FileCheck,
+  BookText,
+  Tag,
+  Layers,
+  Smartphone,
+  Maximize,
+  Minimize
 } from "lucide-react";
 import { PRELOADED_KANJI, KanjiCard } from "./data/preloadedKanji";
-import { LearningStatus, UserProgress, JFTGrammar, JFTConjunction } from "./types";
+import { LearningStatus, UserProgress, JFTGrammar, JFTConjunction, VocabularyItem } from "./types";
 import KanjiCardView from "./components/KanjiCardView";
 import { PRELOADED_VERBS, JFTVerb } from "./data/preloadedVerbs";
 import VerbCardView from "./components/VerbCardView";
 import { PRELOADED_ADJECTIVES, JFTAdjective } from "./data/preloadedAdjectives";
 import AdjectiveCardView from "./components/AdjectiveCardView";
+import { PRELOADED_VOCABULARY } from "./data/preloadedVocabulary";
+import VocabularyCardView from "./components/VocabularyCardView";
 import QuizView from "./components/QuizView";
 import { PRELOADED_GRAMMAR } from "./data/preloadedGrammar";
 import GrammarCardView from "./components/GrammarCardView";
@@ -95,7 +103,7 @@ function getKanjiForm(num: number, counterChar: string): string {
 
 export default function App() {
   // Navigation tabs
-  const [activeTab, setActiveTab] = useState<"alphabet" | "learn" | "test" | "verbs" | "adjectives" | "counters" | "conjunctions" | "grammar" | "quiz" | "dictionary" | "stats" | "profile" | "skill_tests" | "mock_tests" | "games">(() => {
+  const [activeTab, setActiveTab] = useState<"alphabet" | "learn" | "test" | "verbs" | "adjectives" | "vocabulary" | "counters" | "conjunctions" | "grammar" | "quiz" | "dictionary" | "stats" | "profile" | "skill_tests" | "mock_tests" | "games">(() => {
     const saved = localStorage.getItem("jft_active_tab");
     return (saved as any) || "alphabet";
   });
@@ -148,6 +156,76 @@ export default function App() {
 
   // Mobile navigation menu show/hide toggle state
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Mobile Phone Landscape Mode state and handler
+  const [isSiteLandscapeMode, setIsSiteLandscapeMode] = useState(false);
+  const [isPhonePortrait, setIsPhonePortrait] = useState(false);
+  const [isPhoneLandscape, setIsPhoneLandscape] = useState(false);
+  // Header hidden ONLY in landscape mode (hidden by default when in landscape mode so the user has 100% full screen for mock tests)
+  const [isHeaderCollapsedInLandscape, setIsHeaderCollapsedInLandscape] = useState(true);
+
+  useEffect(() => {
+    const checkOrientation = () => {
+      const isPortrait = window.innerWidth < window.innerHeight;
+      const isLandscapeMobile = window.innerWidth >= window.innerHeight && window.innerHeight < 650;
+      setIsPhonePortrait(isPortrait);
+      setIsPhoneLandscape(isLandscapeMobile);
+    };
+    checkOrientation();
+    window.addEventListener("resize", checkOrientation);
+    window.addEventListener("orientationchange", checkOrientation);
+
+    const handleFsChange = () => {
+      if (!document.fullscreenElement) {
+        setIsSiteLandscapeMode(false);
+      }
+    };
+    document.addEventListener("fullscreenchange", handleFsChange);
+    document.addEventListener("webkitfullscreenchange", handleFsChange);
+
+    return () => {
+      window.removeEventListener("resize", checkOrientation);
+      window.removeEventListener("orientationchange", checkOrientation);
+      document.removeEventListener("fullscreenchange", handleFsChange);
+      document.removeEventListener("webkitfullscreenchange", handleFsChange);
+    };
+  }, []);
+
+  const isCurrentlyInLandscape = isSiteLandscapeMode || isPhoneLandscape;
+
+  const toggleSiteLandscapeMode = async () => {
+    try {
+      if (!isSiteLandscapeMode) {
+        setIsHeaderCollapsedInLandscape(true);
+        const rootElem = document.documentElement;
+        if (rootElem.requestFullscreen) {
+          await rootElem.requestFullscreen();
+        } else if ((rootElem as any).webkitRequestFullscreen) {
+          await (rootElem as any).webkitRequestFullscreen();
+        }
+        setIsSiteLandscapeMode(true);
+        try {
+          if (screen.orientation && "lock" in screen.orientation) {
+            await (screen.orientation as any).lock("landscape");
+          }
+        } catch (e) {
+          // Lock is optional or requires user gesture on some browsers
+        }
+      } else {
+        if (document.fullscreenElement) {
+          await document.exitFullscreen();
+        }
+        setIsSiteLandscapeMode(false);
+        try {
+          if (screen.orientation && "unlock" in screen.orientation) {
+            (screen.orientation as any).unlock();
+          }
+        } catch (e) {}
+      }
+    } catch (err) {
+      setIsSiteLandscapeMode((prev) => !prev);
+    }
+  };
   
   // Daily study progress & targets and sync status
   const [dailyGoalToggle, setDailyGoalToggle] = useState(() => {
@@ -230,8 +308,16 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length >= PRELOADED_KANJI.length) {
-          return parsed;
+        if (Array.isArray(parsed)) {
+          // Keep all preloaded cards (JFT + N3) intact and merge any custom cards
+          const map = new Map<string, KanjiCard>();
+          PRELOADED_KANJI.forEach((k) => map.set(k.id, k));
+          parsed.forEach((c: KanjiCard) => {
+            if (c && c.id && !map.has(c.id)) {
+              map.set(c.id, c);
+            }
+          });
+          return Array.from(map.values());
         }
       } catch (e) {
         console.error("Failed to parse saved cards, reverting to preloaded base.");
@@ -267,7 +353,9 @@ export default function App() {
   // Search, Filter states
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<"ALL" | "NOT_YET" | "OK">("ALL");
-  const [visibleKanjiCount, setVisibleKanjiCount] = useState(16);
+  const [kanjiLevelFilter, setKanjiLevelFilter] = useState<"ALL" | "JFT" | "N5" | "N4" | "N3">("ALL");
+  const [selectedN3Lesson, setSelectedN3Lesson] = useState<string>("ALL");
+  const [visibleKanjiCount, setVisibleKanjiCount] = useState(24);
 
   // Focus Modes / Focus Overlay
   const [focusedCardIndex, setFocusedCardIndex] = useState<number | null>(null);
@@ -301,8 +389,11 @@ export default function App() {
   // Verbs search, filter states
   const [verbsSearchQuery, setVerbsSearchQuery] = useState("");
   const [activeVerbsFilter, setActiveVerbsFilter] = useState<"ALL" | "NOT_YET" | "OK">("ALL");
+  const [verbsLevelFilter, setVerbsLevelFilter] = useState<"ALL" | "JFT" | "N5" | "N4" | "N3">("ALL");
+  const [verbsGroupFilter, setVerbsGroupFilter] = useState<"ALL" | "Group 1" | "Group 2" | "Group 3">("ALL");
+  const [selectedVerbsN3Lesson, setSelectedVerbsN3Lesson] = useState<string>("ALL");
   const [verbsPracticePerspective, setVerbsPracticePerspective] = useState<"sinhala" | "japanese">("japanese");
-  const [visibleVerbsCount, setVisibleVerbsCount] = useState(16);
+  const [visibleVerbsCount, setVisibleVerbsCount] = useState(24);
 
   // JFT Adjectives State
   const [adjectives] = useState<JFTAdjective[]>(PRELOADED_ADJECTIVES);
@@ -321,6 +412,31 @@ export default function App() {
   const [activeAdjectivesFilter, setActiveAdjectivesFilter] = useState<"ALL" | "NOT_YET" | "OK">("ALL");
   const [activeAdjectiveTypeFilter, setActiveAdjectiveTypeFilter] = useState<"ALL" | "I" | "NA">("ALL");
   const [adjectivesPracticePerspective, setAdjectivesPracticePerspective] = useState<"sinhala" | "japanese">("japanese");
+
+  // JFT & N3/N4/N5 Vocabulary State
+  const [vocabulary] = useState<VocabularyItem[]>(PRELOADED_VOCABULARY);
+  const [vocabularyProgress, setVocabularyProgress] = useState<UserProgress>(() => {
+    const saved = localStorage.getItem("jft_vocabulary_progress");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return {};
+  });
+
+  const [vocabularyViewMode, setVocabularyViewMode] = useState<"learn" | "test">("learn");
+  const [vocabularySearchQuery, setVocabularySearchQuery] = useState("");
+  const [activeVocabularyFilter, setActiveVocabularyFilter] = useState<"ALL" | "NOT_YET" | "OK">("ALL");
+  const [vocabularyLevelFilter, setVocabularyLevelFilter] = useState<"ALL" | "JFT" | "N5" | "N4" | "N3">("ALL");
+  const [selectedVocabCategory, setSelectedVocabCategory] = useState<string>("ALL");
+  const [vocabularyPracticePerspective, setVocabularyPracticePerspective] = useState<"sinhala" | "japanese">("japanese");
+  const [visibleVocabCount, setVisibleVocabCount] = useState(24);
+
+  // Vocabulary Test Deck state
+  const [vocabTestDeck, setVocabTestDeck] = useState<VocabularyItem[]>([]);
+  const [currentVocabTestIndex, setCurrentVocabTestIndex] = useState(0);
+  const [isVocabTestCardRevealed, setIsVocabTestCardRevealed] = useState(false);
 
   // JFT Counting Systems / Counters State
   const [counters] = useState<CounterItem[]>(preloadedCounters);
@@ -410,6 +526,10 @@ export default function App() {
   }, [adjectivesProgress]);
 
   useEffect(() => {
+    localStorage.setItem("jft_vocabulary_progress", JSON.stringify(vocabularyProgress));
+  }, [vocabularyProgress]);
+
+  useEffect(() => {
     localStorage.setItem("jft_grammar_progress", JSON.stringify(grammarProgress));
   }, [grammarProgress]);
 
@@ -425,23 +545,43 @@ export default function App() {
     localStorage.setItem("jft_kanji_srs", JSON.stringify(srsRecords));
   }, [srsRecords]);
 
-  // Set up testing/shuffled deck whenever we enter knowledge check mode or cards list updates
+  // Set up testing/shuffled deck whenever we enter knowledge check mode or cards/level filter updates
   useEffect(() => {
     if (activeTab === "test" || (activeTab === "learn" && kanjiViewMode === "test")) {
       shuffleTestDeck();
     }
-  }, [activeTab, kanjiViewMode]);
+  }, [activeTab, kanjiViewMode, kanjiLevelFilter, selectedN3Lesson]);
 
-  const shuffleTestDeck = () => {
-    // 1. Random shuffle all loaded cards first using Fisher-Yates
-    const deck = [...cards];
+  const shuffleTestDeck = (overrideLevel?: "ALL" | "JFT" | "N5" | "N4" | "N3", overrideLesson?: string) => {
+    const lvl = overrideLevel !== undefined ? overrideLevel : kanjiLevelFilter;
+    const lesson = overrideLesson !== undefined ? overrideLesson : selectedN3Lesson;
+
+    let candidateCards = cards;
+    if (lvl !== "ALL") {
+      if (lvl === "JFT") {
+        candidateCards = cards.filter(c => c.level === "N5" || c.level === "N4" || c.level === "JFT" || !c.id.startsWith("n3"));
+      } else if (lvl === "N3") {
+        candidateCards = cards.filter(c => {
+          if (lesson !== "ALL") return c.lesson === lesson;
+          return true;
+        });
+      } else if (lvl === "N5") {
+        candidateCards = cards.filter(c => c.level === "N5" || (c.indexNumber && c.indexNumber <= 150 && !c.id.startsWith("n3")));
+      } else if (lvl === "N4") {
+        candidateCards = cards.filter(c => c.level === "N5" || c.level === "N4" || !c.id.startsWith("n3"));
+      }
+    }
+
+    if (candidateCards.length === 0) candidateCards = cards;
+
+    // 1. Random shuffle candidate cards first using Fisher-Yates
+    const deck = [...candidateCards];
     for (let i = deck.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [deck[i], deck[j]] = [deck[j], deck[i]];
     }
 
     // 2. Sort the shuffled array by SRS-priority index (descending priority)
-    // This biases cards the user struggles with or gets wrong to show up much earlier
     deck.sort((a, b) => {
       const srsA = srsRecords[a.id] || { repetitions: 0, interval: 1, efactor: 2.5, incorrectCount: 0 };
       const srsB = srsRecords[b.id] || { repetitions: 0, interval: 1, efactor: 2.5, incorrectCount: 0 };
@@ -459,7 +599,7 @@ export default function App() {
                      ((3.0 - srsA.efactor) * 80) - 
                      (srsA.repetitions * 15) - 
                      (srsA.interval * 5) + 
-                     (Math.random() * 40); // 40pts of random jitter to keep deck shuffling fresh
+                     (Math.random() * 40);
 
       const scoreB = statusWeightB + 
                      (srsB.incorrectCount * 60) + 
@@ -468,7 +608,7 @@ export default function App() {
                      (srsB.interval * 5) + 
                      (Math.random() * 40);
 
-      return scoreB - scoreA; // Descending sort
+      return scoreB - scoreA;
     });
 
     setTestDeck(deck);
@@ -481,10 +621,32 @@ export default function App() {
     if (activeTab === "verbs" && verbsViewMode === "test") {
       shuffleVerbTestDeck();
     }
-  }, [activeTab, verbsViewMode]);
+  }, [activeTab, verbsViewMode, verbsLevelFilter, verbsGroupFilter, selectedVerbsN3Lesson]);
 
-  const shuffleVerbTestDeck = () => {
-    const deck = [...verbs];
+  const shuffleVerbTestDeck = (overrideLevel?: "ALL" | "JFT" | "N5" | "N4" | "N3", overrideGroup?: "ALL" | "Group 1" | "Group 2" | "Group 3") => {
+    const lvl = overrideLevel !== undefined ? overrideLevel : verbsLevelFilter;
+    const grp = overrideGroup !== undefined ? overrideGroup : verbsGroupFilter;
+    let pool = [...verbs];
+    if (lvl !== "ALL") {
+      pool = pool.filter(v => {
+        if (lvl === "N5") return v.level === "N5";
+        if (lvl === "N4") return v.level === "N4" || v.level === "N5";
+        if (lvl === "N3") return v.level === "N3" || v.level === "N4" || v.level === "N5";
+        if (lvl === "JFT") return (v.level || "JFT") === "JFT" || v.level === "N4" || v.level === "N5";
+        return true;
+      });
+    }
+    if (grp !== "ALL") {
+      pool = pool.filter(v => v.group === grp);
+    }
+    if (selectedVerbsN3Lesson !== "ALL") {
+      pool = pool.filter(v => !v.lesson || v.lesson === selectedVerbsN3Lesson);
+    }
+    if (pool.length === 0) {
+      pool = [...verbs];
+    }
+
+    const deck = [...pool];
     for (let i = deck.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [deck[i], deck[j]] = [deck[j], deck[i]];
@@ -566,6 +728,51 @@ export default function App() {
     setAdjTestDeck(deck);
     setCurrentAdjTestIndex(0);
     setIsAdjTestCardRevealed(false);
+  };
+
+  // Set up testing/shuffled deck whenever we enter vocabulary test mode or filters update
+  useEffect(() => {
+    if (activeTab === "vocabulary" && vocabularyViewMode === "test") {
+      shuffleVocabTestDeck();
+    }
+  }, [activeTab, vocabularyViewMode, vocabularyLevelFilter, selectedVocabCategory]);
+
+  const shuffleVocabTestDeck = (overrideLevel?: "ALL" | "JFT" | "N5" | "N4" | "N3", overrideCategory?: string) => {
+    const lvl = overrideLevel !== undefined ? overrideLevel : vocabularyLevelFilter;
+    const cat = overrideCategory !== undefined ? overrideCategory : selectedVocabCategory;
+
+    let candidateCards = vocabulary.filter((item) => {
+      if (lvl !== "ALL") {
+        if (lvl === "N5" && item.level !== "N5") return false;
+        if (lvl === "N4" && item.level !== "N4" && item.level !== "N5") return false;
+        if (lvl === "N3" && item.level !== "N3" && item.level !== "N4" && item.level !== "N5") return false;
+        if (lvl === "JFT" && item.level !== "JFT" && item.level !== "N4" && item.level !== "N5") return false;
+      }
+      if (cat !== "ALL" && item.category !== cat) return false;
+      return true;
+    });
+
+    if (candidateCards.length === 0) {
+      candidateCards = [...vocabulary];
+    }
+
+    const deck = [...candidateCards];
+    for (let i = deck.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+
+    deck.sort((a, b) => {
+      const statusA = vocabularyProgress[a.id] || "UNSTUDIED";
+      const statusB = vocabularyProgress[b.id] || "UNSTUDIED";
+      const weightA = statusA === "NOT_YET" ? 150 : statusA === "UNSTUDIED" ? 50 : 0;
+      const weightB = statusB === "NOT_YET" ? 150 : statusB === "UNSTUDIED" ? 50 : 0;
+      return weightB - weightA + (Math.random() * 40 - 20);
+    });
+
+    setVocabTestDeck(deck);
+    setCurrentVocabTestIndex(0);
+    setIsVocabTestCardRevealed(false);
   };
 
   const handleUpdateCounterStatus = (id: string, status: "OK" | "NOT_YET") => {
@@ -1279,6 +1486,36 @@ export default function App() {
     }
   };
 
+  // Update a vocabulary progress status
+  const handleUpdateVocabularyStatus = (vocabId: string, status: LearningStatus) => {
+    setVocabularyProgress((prev) => {
+      const updated = { ...prev, [vocabId]: status };
+      localStorage.setItem("jft_vocabulary_progress", JSON.stringify(updated));
+      return updated;
+    });
+    recordStudyActivity();
+
+    // Prevent duplicate updates within a short frame
+    const now = Date.now();
+    if (status !== "UNSTUDIED") {
+      setLastSrsUpdate((prevMap) => {
+        const lastTime = prevMap[vocabId] || 0;
+        if (now - lastTime > 600) {
+          updateCardSRS(vocabId, status === "OK");
+          return { ...prevMap, [vocabId]: now };
+        }
+        return prevMap;
+      });
+    }
+  };
+
+  const handleResetVocabularyProgress = () => {
+    if (window.confirm("ඔබට Vocabulary ප්‍රගතිය නැවත මුල සිට ආරම්භ කිරීමට අවශ්‍යද? (Reset all vocabulary progress?)")) {
+      localStorage.removeItem("jft_vocabulary_progress");
+      setVocabularyProgress({});
+    }
+  };
+
   // Update a grammar progress status
   const handleUpdateGrammarStatus = (grammarId: string, status: LearningStatus) => {
     setGrammarProgress((prev) => ({
@@ -1449,9 +1686,85 @@ export default function App() {
     }
   };
 
+  // Kanji Level breakdown counts and available N3 lessons
+  const kanjiLevelStats = useMemo(() => {
+    let all = 0, jft = 0, n5 = 0, n4 = 0, n3 = 0;
+    let allOk = 0, jftOk = 0, n5Ok = 0, n4Ok = 0, n3Ok = 0;
+
+    cards.forEach((card) => {
+      all++;
+      const isOk = progress[card.id] === "OK";
+      if (isOk) allOk++;
+
+      const isN3 = card.level === "N3" || card.id.startsWith("n3");
+      const isN5 = card.level === "N5" || (card.indexNumber && card.indexNumber <= 150 && !isN3);
+      const isN4 = card.level === "N4" || (card.indexNumber && card.indexNumber > 150 && !isN3);
+      const isJft = card.level === "JFT" || isN5 || isN4;
+
+      if (isN5) {
+        n5++;
+        if (isOk) n5Ok++;
+      }
+      if (isN5 || isN4) {
+        n4++;
+        if (isOk) n4Ok++;
+      }
+      // N3 = N5 + N4 + N3 (all kanji)
+      n3++;
+      if (isOk) n3Ok++;
+
+      if (isJft) {
+        jft++;
+        if (isOk) jftOk++;
+      }
+    });
+
+    return {
+      all: { total: all, ok: allOk },
+      jft: { total: jft, ok: jftOk },
+      n5: { total: n5, ok: n5Ok },
+      n4: { total: n4, ok: n4Ok },
+      n3: { total: n3, ok: n3Ok }
+    };
+  }, [cards, progress]);
+
+  const availableN3Lessons = useMemo(() => {
+    const set = new Set<string>();
+    cards.forEach((c) => {
+      if ((c.level === "N3" || c.id.startsWith("n3")) && c.lesson) {
+        set.add(c.lesson);
+      }
+    });
+    return Array.from(set).sort((a, b) => {
+      const numA = parseInt(a.replace(/\D/g, "") || "0", 10);
+      const numB = parseInt(b.replace(/\D/g, "") || "0", 10);
+      return numA - numB;
+    });
+  }, [cards]);
+
   // Filtering criteria (optimized via useMemo)
   const filteredCards = useMemo(() => {
     return cards.filter((card) => {
+      // Level Category Filter: ALL, JFT, N5, N4, N3
+      // Level Category Filter: ALL, JFT, N5, N4, N3 (N4 = N5+N4, N3 = N5+N4+N3, JFT = N5+N4+JFT)
+      if (kanjiLevelFilter !== "ALL") {
+        if (kanjiLevelFilter === "JFT") {
+          const isJFT = card.level === "N5" || card.level === "N4" || card.level === "JFT" || !card.id.startsWith("n3");
+          if (!isJFT) return false;
+        } else if (kanjiLevelFilter === "N3") {
+          // N3 contains all levels
+          if (selectedN3Lesson !== "ALL" && card.lesson !== selectedN3Lesson) {
+            return false;
+          }
+        } else if (kanjiLevelFilter === "N5") {
+          const isN5 = card.level === "N5" || (card.indexNumber && card.indexNumber <= 150 && !card.id.startsWith("n3"));
+          if (!isN5) return false;
+        } else if (kanjiLevelFilter === "N4") {
+          const isN4 = card.level === "N5" || card.level === "N4" || !card.id.startsWith("n3");
+          if (!isN4) return false;
+        }
+      }
+
       const cardStatus = progress[card.id] || "UNSTUDIED";
       const matchesFilter =
         activeFilter === "ALL" ||
@@ -1466,11 +1779,12 @@ export default function App() {
         card.englishMeaning.toLowerCase().includes(query) ||
         card.sinhalaMeaning.toLowerCase().includes(query) ||
         card.onyomi.toLowerCase().includes(query) ||
-        card.kunyomi.toLowerCase().includes(query);
+        card.kunyomi.toLowerCase().includes(query) ||
+        (card.lesson && card.lesson.toLowerCase().includes(query));
 
       return matchesFilter && matchesSearch;
     });
-  }, [cards, progress, activeFilter, searchQuery]);
+  }, [cards, progress, activeFilter, kanjiLevelFilter, selectedN3Lesson, searchQuery]);
 
   // Calculate scores/ratios (optimized via useMemo)
   const { okCount, notYetCount, percentComplete } = useMemo(() => {
@@ -1481,12 +1795,70 @@ export default function App() {
   }, [cards, progress]);
 
   // Verb scores/ratios and filtering (optimized via useMemo)
-  const { okVerbsCount, notYetVerbsCount, percentVerbsComplete } = useMemo(() => {
-    const ok = verbs.reduce((sum, v) => (verbsProgress[v.id] === "OK" ? sum + 1 : sum), 0);
-    const notYet = verbs.reduce((sum, v) => (verbsProgress[v.id] === "NOT_YET" ? sum + 1 : sum), 0);
+  const { 
+    okVerbsCount, 
+    notYetVerbsCount, 
+    percentVerbsComplete,
+    verbsJftCount,
+    verbsN5Count,
+    verbsN4Count,
+    verbsN3Count,
+    verbsG1Count,
+    verbsG2Count,
+    verbsG3Count
+  } = useMemo(() => {
+    let ok = 0;
+    let notYet = 0;
+    let jftCount = 0;
+    let n5Count = 0;
+    let n4Count = 0;
+    let n3Count = 0;
+    let g1Count = 0;
+    let g2Count = 0;
+    let g3Count = 0;
+
+    verbs.forEach((v) => {
+      const status = verbsProgress[v.id];
+      if (status === "OK") ok++;
+      else if (status === "NOT_YET") notYet++;
+
+      const isN5 = v.level === "N5";
+      const isN4 = v.level === "N4";
+      const isN3 = v.level === "N3";
+      const isJft = (v.level || "JFT") === "JFT";
+
+      if (isN5) n5Count++;
+      if (isN5 || isN4) n4Count++;
+      if (isN5 || isN4 || isN3) n3Count++;
+      if (isN5 || isN4 || isJft) jftCount++;
+
+      if (v.group === "Group 1") g1Count++;
+      else if (v.group === "Group 2") g2Count++;
+      else if (v.group === "Group 3") g3Count++;
+    });
+
     const percent = verbs.length > 0 ? Math.round((ok / verbs.length) * 100) : 0;
-    return { okVerbsCount: ok, notYetVerbsCount: notYet, percentVerbsComplete: percent };
+    return { 
+      okVerbsCount: ok, 
+      notYetVerbsCount: notYet, 
+      percentVerbsComplete: percent,
+      verbsJftCount: jftCount,
+      verbsN5Count: n5Count,
+      verbsN4Count: n4Count,
+      verbsN3Count: n3Count,
+      verbsG1Count: g1Count,
+      verbsG2Count: g2Count,
+      verbsG3Count: g3Count
+    };
   }, [verbs, verbsProgress]);
+
+  const uniqueVerbLessons = useMemo(() => {
+    const set = new Set<string>();
+    verbs.forEach((v) => {
+      if (v.lesson) set.add(v.lesson);
+    });
+    return Array.from(set).sort();
+  }, [verbs]);
 
   const filteredVerbs = useMemo(() => {
     return verbs.filter((verb) => {
@@ -1496,10 +1868,27 @@ export default function App() {
         (activeVerbsFilter === "NOT_YET" && cardStatus === "NOT_YET") ||
         (activeVerbsFilter === "OK" && cardStatus === "OK");
 
+      const matchesLevel =
+        verbsLevelFilter === "ALL" ||
+        (verbsLevelFilter === "N5" && verb.level === "N5") ||
+        (verbsLevelFilter === "N4" && (verb.level === "N4" || verb.level === "N5")) ||
+        (verbsLevelFilter === "N3" && (verb.level === "N3" || verb.level === "N4" || verb.level === "N5")) ||
+        (verbsLevelFilter === "JFT" && ((verb.level || "JFT") === "JFT" || verb.level === "N4" || verb.level === "N5"));
+
+      const matchesGroup =
+        verbsGroupFilter === "ALL" ||
+        verb.group === verbsGroupFilter;
+
+      const matchesLesson =
+        selectedVerbsN3Lesson === "ALL" ||
+        !verb.lesson ||
+        verb.lesson === selectedVerbsN3Lesson;
+
       const query = verbsSearchQuery.toLowerCase().trim();
       const matchesSearch =
         !query ||
         verb.sinhalaMeaning.toLowerCase().includes(query) ||
+        (verb.englishMeaning && verb.englishMeaning.toLowerCase().includes(query)) ||
         verb.kanji.toLowerCase().includes(query) ||
         verb.furigana.toLowerCase().includes(query) ||
         verb.masu.toLowerCase().includes(query) ||
@@ -1507,11 +1896,13 @@ export default function App() {
         verb.te.toLowerCase().includes(query) ||
         verb.ta.toLowerCase().includes(query) ||
         verb.nai.toLowerCase().includes(query) ||
-        verb.nakatta.toLowerCase().includes(query);
+        verb.nakatta.toLowerCase().includes(query) ||
+        (verb.group && verb.group.toLowerCase().includes(query)) ||
+        (verb.lesson && verb.lesson.toLowerCase().includes(query));
 
-      return matchesFilter && matchesSearch;
+      return matchesFilter && matchesLevel && matchesGroup && matchesLesson && matchesSearch;
     });
-  }, [verbs, verbsProgress, activeVerbsFilter, verbsSearchQuery]);
+  }, [verbs, verbsProgress, activeVerbsFilter, verbsLevelFilter, verbsGroupFilter, selectedVerbsN3Lesson, verbsSearchQuery]);
 
   // Adjective scores/ratios and filtering (optimized via useMemo)
   const { okAdjectivesCount, notYetAdjectivesCount, percentAdjectivesComplete } = useMemo(() => {
@@ -1544,6 +1935,120 @@ export default function App() {
       return matchesStatus && matchesType && matchesSearch;
     });
   }, [adjectives, adjectivesProgress, activeAdjectivesFilter, activeAdjectiveTypeFilter, adjectivesSearchQuery]);
+
+  // Vocabulary scores, level breakdown, categories, and filtering (Cumulative: N4=N5+N4, N3=N5+N4+N3, JFT=N5+N4+JFT)
+  const vocabLevelStats = useMemo(() => {
+    let all = 0, allOk = 0;
+    let n5 = 0, n5Ok = 0;
+    let n4 = 0, n4Ok = 0;
+    let n3 = 0, n3Ok = 0;
+    let jft = 0, jftOk = 0;
+
+    vocabulary.forEach((item) => {
+      all++;
+      const isOk = vocabularyProgress[item.id] === "OK";
+      if (isOk) allOk++;
+
+      // N5
+      if (item.level === "N5") {
+        n5++;
+        if (isOk) n5Ok++;
+      }
+
+      // N4 = N5 + N4
+      if (item.level === "N5" || item.level === "N4") {
+        n4++;
+        if (isOk) n4Ok++;
+      }
+
+      // N3 = N5 + N4 + N3
+      if (item.level === "N5" || item.level === "N4" || item.level === "N3") {
+        n3++;
+        if (isOk) n3Ok++;
+      }
+
+      // JFT = N5 + N4 + JFT
+      if (item.level === "N5" || item.level === "N4" || item.level === "JFT") {
+        jft++;
+        if (isOk) jftOk++;
+      }
+    });
+
+    return {
+      all: { total: all, ok: allOk },
+      jft: { total: jft, ok: jftOk },
+      n5: { total: n5, ok: n5Ok },
+      n4: { total: n4, ok: n4Ok },
+      n3: { total: n3, ok: n3Ok }
+    };
+  }, [vocabulary, vocabularyProgress]);
+
+  const availableVocabCategories = useMemo(() => {
+    const set = new Set<string>();
+    vocabulary.forEach((v) => {
+      const matchesLevel =
+        vocabularyLevelFilter === "ALL" ||
+        (vocabularyLevelFilter === "N5" && v.level === "N5") ||
+        (vocabularyLevelFilter === "N4" && (v.level === "N5" || v.level === "N4")) ||
+        (vocabularyLevelFilter === "N3" && (v.level === "N5" || v.level === "N4" || v.level === "N3")) ||
+        (vocabularyLevelFilter === "JFT" && (v.level === "N5" || v.level === "N4" || v.level === "JFT"));
+
+      if (matchesLevel && v.category) {
+        set.add(v.category);
+      }
+    });
+    return Array.from(set).sort((a, b) => {
+      const numA = parseInt(a.replace(/\D/g, "") || "0", 10);
+      const numB = parseInt(b.replace(/\D/g, "") || "0", 10);
+      if (numA && numB) return numA - numB;
+      return a.localeCompare(b);
+    });
+  }, [vocabulary, vocabularyLevelFilter]);
+
+  const { okVocabCount, notYetVocabCount, percentVocabComplete } = useMemo(() => {
+    const ok = vocabulary.reduce((sum, v) => (vocabularyProgress[v.id] === "OK" ? sum + 1 : sum), 0);
+    const notYet = vocabulary.reduce((sum, v) => (vocabularyProgress[v.id] === "NOT_YET" ? sum + 1 : sum), 0);
+    const percent = vocabulary.length > 0 ? Math.round((ok / vocabulary.length) * 100) : 0;
+    return { okVocabCount: ok, notYetVocabCount: notYet, percentVocabComplete: percent };
+  }, [vocabulary, vocabularyProgress]);
+
+  const filteredVocabulary = useMemo(() => {
+    return vocabulary.filter((item) => {
+      // Level filter (Cumulative: N4 = N5+N4, N3 = N5+N4+N3, JFT = N5+N4+JFT)
+      if (vocabularyLevelFilter !== "ALL") {
+        const matchesLevel =
+          (vocabularyLevelFilter === "N5" && item.level === "N5") ||
+          (vocabularyLevelFilter === "N4" && (item.level === "N5" || item.level === "N4")) ||
+          (vocabularyLevelFilter === "N3" && (item.level === "N5" || item.level === "N4" || item.level === "N3")) ||
+          (vocabularyLevelFilter === "JFT" && (item.level === "N5" || item.level === "N4" || item.level === "JFT"));
+        if (!matchesLevel) return false;
+      }
+      // Category / Lesson filter
+      if (selectedVocabCategory !== "ALL" && item.category !== selectedVocabCategory) {
+        return false;
+      }
+
+      const cardStatus = vocabularyProgress[item.id] || "UNSTUDIED";
+      const matchesStatus =
+        activeVocabularyFilter === "ALL" ||
+        (activeVocabularyFilter === "NOT_YET" && cardStatus === "NOT_YET") ||
+        (activeVocabularyFilter === "OK" && cardStatus === "OK");
+
+      if (!matchesStatus) return false;
+
+      const query = vocabularySearchQuery.toLowerCase().trim();
+      if (!query) return true;
+
+      return (
+        item.sinhalaMeaning.toLowerCase().includes(query) ||
+        item.kanji.toLowerCase().includes(query) ||
+        item.reading.toLowerCase().includes(query) ||
+        item.romaji.toLowerCase().includes(query) ||
+        item.englishMeaning.toLowerCase().includes(query) ||
+        (item.category && item.category.toLowerCase().includes(query))
+      );
+    });
+  }, [vocabulary, vocabularyProgress, vocabularyLevelFilter, selectedVocabCategory, activeVocabularyFilter, vocabularySearchQuery]);
 
   // Grammar scores/ratios and filtering (optimized via useMemo)
   const { okGrammarCount, notYetGrammarCount, percentGrammarComplete } = useMemo(() => {
@@ -1851,22 +2356,99 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col transition-colors duration-200 bg-[#fdfbf7] text-[#352d28]" id="main-jft-container">
+    <div
+      className={`min-h-screen flex flex-col transition-colors duration-200 bg-[#fdfbf7] text-[#352d28] ${
+        isSiteLandscapeMode ? "site-landscape-active" : ""
+      }`}
+      id="main-jft-container"
+    >
+      {/* Floating Landscape Orientation Guidance Bar if in portrait */}
+      {isSiteLandscapeMode && isPhonePortrait && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[100000] bg-slate-900/95 text-white border-2 border-amber-400 px-4 py-2 rounded-2xl shadow-2xl flex items-center gap-2.5 text-xs font-black animate-pulse max-w-[92vw]">
+          <Smartphone className="w-4 h-4 text-amber-400 rotate-90 shrink-0" />
+          <span>🔄 කරුණාකර දුරකථනය හරහට (Landscape) හරවා භාවිතා කරන්න</span>
+        </div>
+      )}
+
+      {/* Floating Mobile Landscape Quick Toggle Button */}
+      <div className="fixed bottom-4 right-4 z-[9999] md:hidden">
+        <button
+          type="button"
+          onClick={toggleSiteLandscapeMode}
+          className={`py-2 px-3.5 rounded-2xl text-xs font-black shadow-2xl flex items-center gap-1.5 border transition-all cursor-pointer backdrop-blur-md ${
+            isSiteLandscapeMode
+              ? "bg-amber-600 text-white border-amber-400 ring-4 ring-amber-300/40"
+              : "bg-slate-900/90 text-white border-slate-700 hover:bg-black"
+          }`}
+          title="ජංගම දුරකථනයෙන් Landscape ලෙස භාවිතා කරන්න"
+        >
+          <Smartphone className="w-4 h-4 text-amber-400 rotate-90" />
+          <span>{isSiteLandscapeMode ? "Exit Landscape" : "📱 Landscape"}</span>
+        </button>
+      </div>
+
       {/* Dynamic Header */}
       <header className="sticky top-0 z-40 bg-white border-b border-[#e9e2d7] shadow-sm transition-colors duration-150">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-[#52796f] flex items-center justify-center text-white font-bold text-lg shadow-md shadow-[#52796f]/15">
-              漢字
+        {/* Minimal Bar in Landscape Mode when Header is Collapsed */}
+        {isCurrentlyInLandscape && isHeaderCollapsedInLandscape && (
+          <div className="flex items-center justify-between px-3 py-1.5 bg-[#fcfaf5] border-b border-[#e9dfcc] text-xs shadow-xs sticky top-0 z-50">
+            <span className="font-extrabold text-[#52796f] flex items-center gap-1.5 text-xs uppercase truncate max-w-[180px]">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+              {activeTab.replace(/_/g, " ")}
+            </span>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsHeaderCollapsedInLandscape(false)}
+                className="px-3 py-1 rounded-xl text-[11px] font-black bg-[#52796f] hover:bg-[#3d5a52] text-white flex items-center gap-1 shadow-sm cursor-pointer transition-all active:scale-95"
+                title="ප්‍රධාන මෙනුව හා Header එක පෙන්වන්න (Show Header & Menu)"
+              >
+                <span>🔽 Menu & Header</span>
+              </button>
+              <button
+                type="button"
+                onClick={toggleSiteLandscapeMode}
+                className="px-2.5 py-1 rounded-xl text-[11px] font-black border border-amber-500 bg-amber-500 text-white flex items-center gap-1 cursor-pointer"
+                title="Exit Landscape"
+              >
+                <Smartphone className="w-3.5 h-3.5 rotate-90 text-white" />
+                <span>Exit Land.</span>
+              </button>
             </div>
-            <div>
-              <h1 className="text-xl font-extrabold font-display tracking-tight text-[#52796f]">
-                JFT & N4 Learning Helper
-              </h1>
-              <p className="text-xs text-[#bc6c25] font-semibold">
-                Sinhala & English Translations with Real-time Assessor
-              </p>
+          </div>
+        )}
+
+        <div
+          className={`max-w-7xl mx-auto px-4 py-4 flex-col md:flex-row md:items-center md:justify-between gap-4 header-inner-row ${
+            isCurrentlyInLandscape && isHeaderCollapsedInLandscape ? "hidden" : "flex"
+          }`}
+        >
+          <div className="flex items-center justify-between md:justify-start gap-3 w-full md:w-auto">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl bg-[#52796f] flex items-center justify-center text-white font-bold text-lg shadow-md shadow-[#52796f]/15 shrink-0">
+                漢字
+              </div>
+              <div>
+                <h1 className="text-xl font-extrabold font-display tracking-tight text-[#52796f]">
+                  JFT & N4 Learning Helper
+                </h1>
+                <p className="text-xs text-[#bc6c25] font-semibold">
+                  Sinhala & English Translations with Real-time Assessor
+                </p>
+              </div>
             </div>
+
+            {/* Quick Hide Header button in landscape mode */}
+            {isCurrentlyInLandscape && (
+              <button
+                type="button"
+                onClick={() => setIsHeaderCollapsedInLandscape(true)}
+                className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-[#eae3df] hover:bg-[#ded5cf] text-[#354f52] border border-[#e9dfcc] flex items-center gap-1 cursor-pointer transition-colors shrink-0"
+                title="Landscape මාදිලියේදී Header එක සඟවන්න (Hide Header)"
+              >
+                <span>🔼 Hide</span>
+              </button>
+            )}
           </div>
 
           {/* Header Widgets panel */}
@@ -2010,30 +2592,76 @@ export default function App() {
               </div>
             )}
 
+            {/* Site-wide Mobile Phone Landscape Mode Switcher Button */}
+            <button
+              type="button"
+              onClick={toggleSiteLandscapeMode}
+              className={`p-1.5 px-3 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 border shadow-3xs ${
+                isSiteLandscapeMode
+                  ? "bg-amber-500 text-white border-amber-600 ring-2 ring-amber-300"
+                  : "bg-[#fcfaf5] hover:bg-[#eae3df] text-[#354f52] border-[#e9dfcc]"
+              }`}
+              title="ජංගම දුරකථන Landscape Mode සක්‍රීය කරන්න (Phone Landscape Mode)"
+            >
+              <Smartphone className={`w-3.5 h-3.5 ${isSiteLandscapeMode ? "rotate-90 text-white" : "rotate-90 text-amber-600"}`} />
+              <span className="text-[11px] font-bold">
+                {isSiteLandscapeMode ? "Landscape ON" : "📱 Landscape"}
+              </span>
+            </button>
+
           </div>
         </div>
 
         {/* Unified full-width tab switcher responsive bar */}
-        <div className="bg-transparent border-t border-[#e9dfcc] px-4 py-3.5">
+        <div
+          className={`bg-transparent border-t border-[#e9dfcc] px-4 py-3.5 ${
+            isCurrentlyInLandscape && isHeaderCollapsedInLandscape ? "hidden" : "block"
+          }`}
+        >
           <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
             
-            {/* Mobile View Toggle Bar: Displays active tab cleanly and offers a toggle button */}
-            <div className="md:hidden flex items-center justify-between w-full bg-[#faf8f5] p-2.5 px-4 rounded-2xl border border-[#e9dfcc] shadow-3xs">
-              <span className="text-xs font-black text-[#52796f] uppercase flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                ACTIVE: <span className="font-extrabold pr-1 text-[#52796f]">{activeTab.toUpperCase()}</span>
+            {/* Mobile View Toggle Bar: Displays active tab cleanly and offers landscape & menu buttons */}
+            <div className="md:hidden flex items-center justify-between w-full bg-[#faf8f5] p-2 px-3 sm:px-4 rounded-2xl border border-[#e9dfcc] shadow-3xs gap-2">
+              <span className="text-xs font-black text-[#52796f] uppercase flex items-center gap-1.5 truncate">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+                ACTIVE: <span className="font-extrabold pr-1 text-[#52796f] truncate">{activeTab.toUpperCase()}</span>
               </span>
-              <button
-                type="button"
-                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                className="px-4 py-2 bg-[#84a98c]/30 hover:bg-[#84a98c]/45 text-[#354f52] rounded-xl text-xs font-black shadow-3xs flex items-center gap-1.5 transition duration-150 cursor-pointer"
-              >
-                {isMobileMenuOpen ? "Hide Menu ✕" : "Show Menu ☰"}
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={toggleSiteLandscapeMode}
+                  className={`px-2 py-1.5 rounded-xl text-[11px] font-black shadow-3xs flex items-center gap-1 border transition-all cursor-pointer ${
+                    isSiteLandscapeMode
+                      ? "bg-amber-500 text-white border-amber-600 ring-2 ring-amber-300"
+                      : "bg-[#faf6ed] hover:bg-[#eae3df] text-[#354f52] border-[#e9dfcc]"
+                  }`}
+                  title="Mobile Landscape Mode"
+                >
+                  <Smartphone className={`w-3 h-3 rotate-90 ${isSiteLandscapeMode ? "text-white" : "text-amber-600"}`} />
+                  <span>{isSiteLandscapeMode ? "Exit" : "Landscape"}</span>
+                </button>
+                {isCurrentlyInLandscape && (
+                  <button
+                    type="button"
+                    onClick={() => setIsHeaderCollapsedInLandscape(true)}
+                    className="px-2 py-1.5 bg-[#f2ede4] hover:bg-[#e6decf] text-[#354f52] rounded-xl text-[11px] font-black border border-[#e9dfcc] shadow-3xs flex items-center gap-1 cursor-pointer transition-colors"
+                    title="Landscape මාදිලියේදී Header එක සඟවන්න (Hide Header)"
+                  >
+                    <span>🔼 Hide</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                  className="px-2.5 py-1.5 bg-[#84a98c]/30 hover:bg-[#84a98c]/45 text-[#354f52] rounded-xl text-xs font-black shadow-3xs flex items-center gap-1 transition duration-150 cursor-pointer"
+                >
+                  {isMobileMenuOpen ? "Hide ✕" : "Menu ☰"}
+                </button>
+              </div>
             </div>
 
             {/* Switcher Grid: hidden on mobile by default unless isMobileMenuOpen is true */}
-            <div className={`${isMobileMenuOpen ? "grid" : "hidden md:grid"} grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-13 gap-2 bg-[#faf8f5] border border-[#e9e2d7]/80 p-2 rounded-2xl w-full shadow-3xs transition-all duration-300`}>
+            <div className={`${isMobileMenuOpen ? "grid" : "hidden md:grid"} grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-14 gap-2 bg-[#faf8f5] border border-[#e9e2d7]/80 p-2 rounded-2xl w-full shadow-3xs transition-all duration-300`}>
               
               {/* Tab 1: Alphabet */}
               <button
@@ -2065,7 +2693,24 @@ export default function App() {
                     : "text-[#354f52] hover:bg-white hover:text-[#bc6c25] border border-[#e9e2d7]/50"
                 }`}
               >
-                <GraduationCap className={`w-4 h-4 ${activeTab === "learn" && kanjiViewMode === "learn" ? "text-white" : "text-[#52796f]"}`} /> JFT Kanji
+                <GraduationCap className={`w-4 h-4 ${activeTab === "learn" && kanjiViewMode === "learn" ? "text-white" : "text-[#52796f]"}`} /> Kanji (漢字)
+              </button>
+
+              {/* Tab 2.5: Vocabulary (වචන මාලාව) */}
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab("vocabulary");
+                  setVocabularyViewMode("learn");
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`px-3 py-3 rounded-xl text-xs font-black transition-all duration-150 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer w-full ${
+                  activeTab === "vocabulary"
+                    ? "bg-[#2d6a4f] text-white shadow-md border-0 ring-4 ring-[#2d6a4f]/20"
+                    : "text-[#354f52] hover:bg-white hover:text-[#2d6a4f] border border-[#e9e2d7]/50"
+                }`}
+              >
+                <BookText className={`w-4 h-4 ${activeTab === "vocabulary" ? "text-white" : "text-[#2d6a4f]"}`} /> Vocabulary
               </button>
 
               {/* Tab 3: Verbs (ක්‍රියාපද) */}
@@ -2335,6 +2980,93 @@ export default function App() {
                   </div>
                 </div>
 
+            {/* Kanji Level Selection: All, JFT, N5, N4, N3 */}
+            <div className="bg-white rounded-[24px] border border-[#e9e2d7] p-4 shadow-xs space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-black uppercase tracking-wider text-[#354f52] flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-[#bc6c25]" /> කන්ජි මට්ටම (Kanji Level):
+                  </span>
+                  <span className="text-[11px] font-bold text-slate-400 hidden sm:inline">
+                    (තෝරාගෙන පාඩම් කරන්න)
+                  </span>
+                </div>
+
+                {/* Level Selector Pills */}
+                <div className="flex flex-wrap items-center gap-1.5 p-1 bg-[#f0ede6] rounded-2xl border border-[#e9e2d7]">
+                  {[
+                    { key: "ALL", label: "🌟 All", count: kanjiLevelStats.all.total },
+                    { key: "JFT", label: "🇯🇵 JFT", count: kanjiLevelStats.jft.total },
+                    { key: "N5", label: "🟢 N5", count: kanjiLevelStats.n5.total },
+                    { key: "N4", label: "🔵 N4", count: kanjiLevelStats.n4.total },
+                    { key: "N3", label: "🟣 N3", count: kanjiLevelStats.n3.total }
+                  ].map((lvl) => (
+                    <button
+                      key={lvl.key}
+                      type="button"
+                      onClick={() => {
+                        setKanjiLevelFilter(lvl.key as any);
+                        setVisibleKanjiCount(24);
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                        kanjiLevelFilter === lvl.key
+                          ? "bg-[#52796f] text-white shadow-xs"
+                          : "text-[#52796f] hover:bg-white/60"
+                      }`}
+                    >
+                      <span>{lvl.label}</span>
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded-md ${
+                        kanjiLevelFilter === lvl.key ? "bg-white/20 text-white" : "bg-white text-slate-600 border border-slate-200"
+                      }`}>
+                        {lvl.count}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* If N3 is selected, display N3 Lesson Filter Dropdown / Bar */}
+              {kanjiLevelFilter === "N3" && (
+                <div className="pt-2 border-t border-dashed border-[#e9e2d7] flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-black text-purple-900 bg-purple-100 px-2.5 py-0.5 rounded-md border border-purple-200">
+                      N3 Lessons (පාඩම් 01 සිට 41 දක්වා)
+                    </span>
+                    <span className="text-xs text-slate-500 font-semibold">
+                      පාඩම අනුව වෙන් කර පාඩම් කරන්න:
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={selectedN3Lesson}
+                      onChange={(e) => {
+                        setSelectedN3Lesson(e.target.value);
+                        setVisibleKanjiCount(24);
+                      }}
+                      className="text-xs font-bold bg-[#fdfbf7] border border-purple-200 text-purple-900 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-400 cursor-pointer"
+                    >
+                      <option value="ALL">📖 සියලුම පාඩම් (All 41 Lessons - 828 Kanji)</option>
+                      {availableN3Lessons.map((les) => (
+                        <option key={les} value={les}>
+                          {les} ({cards.filter(c => c.lesson === les).length} kanji)
+                        </option>
+                      ))}
+                    </select>
+                    {selectedN3Lesson !== "ALL" && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedN3Lesson("ALL")}
+                        className="text-[11px] text-purple-700 hover:underline font-bold"
+                      >
+                        Clear Lesson
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Filtering and Search controls Bar */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-white rounded-[24px] border border-[#e9e2d7] shadow-sm">
               
@@ -2436,12 +3168,44 @@ export default function App() {
 
                   <button
                     type="button"
-                    onClick={shuffleTestDeck}
+                    onClick={() => shuffleTestDeck()}
                     className="p-2.5 bg-[#f0ede6] hover:bg-[#cad2c5]/40 border border-[#e9e2d7] hover:border-[#84a98c] text-[#52796f] rounded-xl transition duration-150 inline-flex items-center gap-1.5 text-xs font-bold shrink-0 shadow-xs cursor-pointer"
                     title="Shuffle Deck"
                   >
                     <Shuffle className="w-3.5 h-3.5" /> Shuffle
                   </button>
+                </div>
+
+                {/* Level selection for Test Mode */}
+                <div className="bg-white rounded-2xl border border-[#e9e2d7] p-3 shadow-xs flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[11px] font-black text-[#52796f] uppercase flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5 text-[#bc6c25]" /> Test Level (පරීක්ෂණ මට්ටම):
+                  </span>
+                  <div className="flex flex-wrap items-center gap-1 bg-[#f0ede6] p-1 rounded-xl">
+                    {[
+                      { key: "ALL", label: "All" },
+                      { key: "JFT", label: "JFT" },
+                      { key: "N5", label: "N5" },
+                      { key: "N4", label: "N4" },
+                      { key: "N3", label: "N3" }
+                    ].map((lvl) => (
+                      <button
+                        key={lvl.key}
+                        type="button"
+                        onClick={() => {
+                          setKanjiLevelFilter(lvl.key as any);
+                          shuffleTestDeck(lvl.key as any);
+                        }}
+                        className={`px-3 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
+                          kanjiLevelFilter === lvl.key
+                            ? "bg-[#52796f] text-white shadow-xs"
+                            : "text-[#52796f] hover:bg-white/60"
+                        }`}
+                      >
+                        {lvl.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 {testDeck.length > 0 ? (
@@ -2610,10 +3374,10 @@ export default function App() {
               <div className="lg:col-span-8 bg-white p-6 rounded-[24px] border border-[#e9e2d7] shadow-sm flex flex-col justify-between">
                 <div>
                   <h3 className="font-display font-bold text-base text-[#354f52] flex items-center gap-2" id="verbs-header-title">
-                    <Zap className="w-5 h-5 text-[#bc6c25]" /> JFT-Basic Verbs Course (ජේ.එෆ්.ටී. ක්‍රියාපද)
+                    <Zap className="w-5 h-5 text-[#bc6c25]" /> Japanese Verbs Master Course (ජපන් ක්‍රියාපද පාඨමාලාව)
                   </h3>
                   <p className="text-xs text-[#84a98c] mt-1.5 leading-relaxed">
-                    මෙම කොටසෙන් ඔබට JFT-Basic විභාගයට අත්‍යවශ්‍ය වන ක්‍රියාපද (Verbs) 113ම ඒවායේ විවිධ ව්‍යාකරණ රටා (Conjugations) සමඟ අධ්‍යයනය කළ හැක. 
+                    මෙම කොටසෙන් ඔබට JFT-Basic සහ JLPT N3 විභාග සඳහා අත්‍යවශ්‍ය වන ක්‍රියාපද (Verbs) 258ම ඒවායේ කාණ්ඩ 3 (Group 1 - Godan, Group 2 - Ichidan, Group 3 - Irregular) සහ සියලු ව්‍යාකරණ රටා (masu, dictionary, nai, ta, nakatta, te) සමඟ අධ්‍යයනය කළ හැක. 
                     පහතින් <strong>සිංහල</strong> හෝ <strong>ජපන්</strong> ක්‍රමය තෝරාගෙන ප්‍රගතිය පරීක්ෂා කරන්න.
                   </p>
                 </div>
@@ -2673,6 +3437,114 @@ export default function App() {
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* Level and Verb Group Filter Bar */}
+            <div className="bg-white p-5 rounded-[24px] border border-[#e9e2d7] shadow-sm space-y-4">
+              {/* Level Filter */}
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+                <span className="text-[10px] font-black text-[#52796f] uppercase tracking-wider flex items-center gap-1.5">
+                  <Tag className="w-3.5 h-3.5 text-[#52796f]" /> Course Level (විභාග මට්ටම)
+                </span>
+                <div className="flex items-center gap-1.5 bg-[#f0ede6] p-1 rounded-xl border border-[#e9e2d7] flex-wrap">
+                  {[
+                    { key: "ALL", label: "📖 All Verbs", count: verbs.length },
+                    { key: "JFT", label: "🇯🇵 JFT-Basic", count: verbsJftCount },
+                    { key: "N5", label: "🔴 JLPT N5", count: verbsN5Count },
+                    { key: "N4", label: "🟠 JLPT N4", count: verbsN4Count },
+                    { key: "N3", label: "🟣 JLPT N3", count: verbsN3Count },
+                  ].map((lvl) => (
+                    <button
+                      key={lvl.key}
+                      type="button"
+                      onClick={() => {
+                        setVerbsLevelFilter(lvl.key as any);
+                        setVisibleVerbsCount(24);
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                        verbsLevelFilter === lvl.key
+                          ? "bg-[#52796f] text-white shadow-xs"
+                          : "text-[#52796f] hover:bg-white/60"
+                      }`}
+                    >
+                      <span>{lvl.label}</span>
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded-md ${
+                        verbsLevelFilter === lvl.key ? "bg-white/20 text-white" : "bg-white text-slate-600 border border-slate-200"
+                      }`}>
+                        {lvl.count}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Group Filter */}
+              <div className="pt-3 border-t border-dashed border-[#e9e2d7] flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+                <span className="text-[10px] font-black text-[#bc6c25] uppercase tracking-wider flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-[#bc6c25]" /> Verb Group (ක්‍රියාපද කාණ්ඩ 3)
+                </span>
+                <div className="flex items-center gap-1.5 bg-[#f0ede6] p-1 rounded-xl border border-[#e9e2d7] flex-wrap">
+                  {[
+                    { key: "ALL", label: "All Groups", count: verbs.length },
+                    { key: "Group 1", label: "⚡ Group 1 (Godan • 1 වන)", count: verbsG1Count },
+                    { key: "Group 2", label: "🌿 Group 2 (Ichidan • 2 වන)", count: verbsG2Count },
+                    { key: "Group 3", label: "🔮 Group 3 (Irregular • 3 වන)", count: verbsG3Count },
+                  ].map((grp) => (
+                    <button
+                      key={grp.key}
+                      type="button"
+                      onClick={() => {
+                        setVerbsGroupFilter(grp.key as any);
+                        setVisibleVerbsCount(24);
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                        verbsGroupFilter === grp.key
+                          ? "bg-[#bc6c25] text-white shadow-xs"
+                          : "text-[#52796f] hover:bg-white/60"
+                      }`}
+                    >
+                      <span>{grp.label}</span>
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded-md ${
+                        verbsGroupFilter === grp.key ? "bg-white/20 text-white" : "bg-white text-slate-600 border border-slate-200"
+                      }`}>
+                        {grp.count}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* N3 Lesson Filter if N3 is selected */}
+              {verbsLevelFilter === "N3" && uniqueVerbLessons.length > 0 && (
+                <div className="pt-3 border-t border-dashed border-[#e9e2d7] flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-black text-purple-900 bg-purple-100 px-2.5 py-0.5 rounded-md border border-purple-200">
+                      N3 Lessons (පාඩම් 01 සිට 41 දක්වා)
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="verbs-n3-lesson-select" className="text-xs font-bold text-slate-500">
+                      පාඩම තෝරන්න:
+                    </label>
+                    <select
+                      id="verbs-n3-lesson-select"
+                      value={selectedVerbsN3Lesson}
+                      onChange={(e) => {
+                        setSelectedVerbsN3Lesson(e.target.value);
+                        setVisibleVerbsCount(24);
+                      }}
+                      className="text-xs font-black bg-[#fdfbf7] border border-[#e9e2d7] rounded-xl px-3 py-1.5 focus:outline-hidden focus:ring-2 focus:ring-[#52796f]/20 cursor-pointer"
+                    >
+                      <option value="ALL">All Lessons (සියලුම පාඩම්)</option>
+                      {uniqueVerbLessons.map((lesson) => (
+                        <option key={lesson} value={lesson}>
+                          {lesson}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Quick Practice Mode Toggle & Search Filter controls */}
@@ -2771,21 +3643,39 @@ export default function App() {
 
             {/* Verbs Card grid layout */}
             {filteredVerbs.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6" id="verbs-deck-layout">
-                {filteredVerbs.map((verb) => (
-                  <VerbCardView
-                    key={verb.id}
-                    verb={verb}
-                    practiceMode={verbsPracticePerspective}
-                    status={verbsProgress[verb.id] || "UNSTUDIED"}
-                    onStatusChange={(status) => handleUpdateVerbStatus(verb.id, status)}
-                  />
-                ))}
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6" id="verbs-deck-layout">
+                  {filteredVerbs.slice(0, visibleVerbsCount).map((verb) => (
+                    <VerbCardView
+                      key={verb.id}
+                      verb={verb}
+                      practiceMode={verbsPracticePerspective}
+                      status={verbsProgress[verb.id] || "UNSTUDIED"}
+                      onStatusChange={(status) => handleUpdateVerbStatus(verb.id, status)}
+                    />
+                  ))}
+                </div>
+
+                {/* Load More Button if filteredVerbs exceeds visibleVerbsCount */}
+                {visibleVerbsCount < filteredVerbs.length && (
+                  <div className="text-center pt-4">
+                    <button
+                      type="button"
+                      onClick={() => setVisibleVerbsCount((prev) => prev + 24)}
+                      className="px-6 py-2.5 bg-white border border-[#e9e2d7] hover:border-[#52796f] hover:bg-[#f0ede6] text-[#52796f] font-black text-xs rounded-xl shadow-xs transition-all cursor-pointer inline-flex items-center gap-2"
+                    >
+                      <span>Load More Verbs / තවත් ක්‍රියාපද පෙන්වන්න</span>
+                      <span className="text-[10px] bg-[#f0ede6] px-2 py-0.5 rounded-full text-[#354f52]">
+                        Showing {Math.min(visibleVerbsCount, filteredVerbs.length)} of {filteredVerbs.length}
+                      </span>
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="p-12 text-center bg-white rounded-2xl border border-[#e9e2d7] shadow-sm">
                 <p className="text-sm font-semibold text-slate-400">ක්‍රියාපද කිසිවක් හමු නොවීය. Select other search criteria.</p>
-                <p className="text-xs text-slate-300 mt-1">සෙවුම් පද නැවත පරීක්ෂා කර බැලීමට උත්සාහ කරන්න.</p>
+                <p className="text-xs text-slate-300 mt-1">සෙවුම් පද හෝ පෙරහන් නැවත පරීක්ෂා කර බැලීමට උත්සාහ කරන්න.</p>
               </div>
             )}
           </div>
@@ -2793,24 +3683,71 @@ export default function App() {
           <div className="max-w-xl mx-auto space-y-6">
                 
             {/* Context/Assessment description box */}
-            <div className="bg-white rounded-[24px] border border-[#e9e2d7] p-5 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <div>
-                <h3 className="font-display font-medium text-sm text-[#354f52] flex items-center gap-1.5" id="verb-test-mode-title">
-                  <Sparkles className="w-4 h-4 text-[#bc6c25] animate-spin" /> Verbs SRS Evaluation Deck (ක්‍රියාපද පරීක්ෂණය)
-                </h3>
-                <p className="text-xs text-[#84a98c] mt-1 leading-relaxed">
-                  This deck is sorted based on Spaced Repetition weights. Click the card to flip and reveal all conjugation states and translation. Mark "Yes" if you remembered it correctly, or "No" to review it more often.
-                </p>
+            <div className="bg-white rounded-[24px] border border-[#e9e2d7] p-5 shadow-sm space-y-4">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                  <h3 className="font-display font-medium text-sm text-[#354f52] flex items-center gap-1.5" id="verb-test-mode-title">
+                    <Sparkles className="w-4 h-4 text-[#bc6c25] animate-spin" /> Verbs SRS Evaluation Deck (ක්‍රියාපද පරීක්ෂණය)
+                  </h3>
+                  <p className="text-xs text-[#84a98c] mt-1 leading-relaxed">
+                    This deck is sorted based on Spaced Repetition weights. Click the card to flip and reveal all conjugation states and translation. Mark "Yes" if you remembered it correctly, or "No" to review it more often.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => shuffleVerbTestDeck()}
+                  className="p-2.5 bg-[#f0ede6] hover:bg-[#cad2c5]/45 border border-[#e9e2d7] hover:border-[#84a98c] text-[#52796f] rounded-xl transition duration-150 inline-flex items-center gap-1.5 text-xs font-bold shrink-0 shadow-xs cursor-pointer"
+                  title="Shuffle Deck"
+                >
+                  <Shuffle className="w-3.5 h-3.5" /> Shuffle
+                </button>
               </div>
 
-              <button
-                type="button"
-                onClick={shuffleVerbTestDeck}
-                className="p-2.5 bg-[#f0ede6] hover:bg-[#cad2c5]/45 border border-[#e9e2d7] hover:border-[#84a98c] text-[#52796f] rounded-xl transition duration-150 inline-flex items-center gap-1.5 text-xs font-bold shrink-0 shadow-xs cursor-pointer"
-                title="Shuffle Deck"
-              >
-                <Shuffle className="w-3.5 h-3.5" /> Shuffle
-              </button>
+              {/* Quick Level & Group filters in test mode */}
+              <div className="pt-3 border-t border-dashed border-[#e9e2d7] flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] font-black text-slate-400 uppercase">Level:</span>
+                  {(["ALL", "JFT", "N5", "N4", "N3"] as const).map((lvl) => (
+                    <button
+                      key={lvl}
+                      type="button"
+                      onClick={() => {
+                        setVerbsLevelFilter(lvl);
+                        shuffleVerbTestDeck(lvl, verbsGroupFilter);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
+                        verbsLevelFilter === lvl
+                          ? "bg-[#52796f] text-white shadow-xs"
+                          : "bg-[#f0ede6] text-[#52796f] hover:bg-white"
+                      }`}
+                    >
+                      {lvl === "ALL" ? "All Levels" : lvl === "JFT" ? "JFT-Basic" : lvl === "N5" ? "JLPT N5" : lvl === "N4" ? "JLPT N4" : "JLPT N3"}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] font-black text-slate-400 uppercase">Group:</span>
+                  {(["ALL", "Group 1", "Group 2", "Group 3"] as const).map((grp) => (
+                    <button
+                      key={grp}
+                      type="button"
+                      onClick={() => {
+                        setVerbsGroupFilter(grp);
+                        shuffleVerbTestDeck(verbsLevelFilter, grp);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
+                        verbsGroupFilter === grp
+                          ? "bg-[#bc6c25] text-white shadow-xs"
+                          : "bg-[#f0ede6] text-[#bc6c25] hover:bg-white"
+                      }`}
+                    >
+                      {grp === "ALL" ? "All" : grp.replace("Group ", "G")}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {verbTestDeck.length > 0 ? (
@@ -3336,6 +4273,520 @@ export default function App() {
         )}
       </div>
     </div>)}
+
+        {/* TAB 4.2: LEARN JAPANESE VOCABULARY (JFT, N5, N4, N3) */}
+        {activeTab === "vocabulary" && (
+          <div className="space-y-6" id="tab-panel-vocabulary">
+            <div className="space-y-6">
+
+            {/* Elegant Study vs Test Mode Switcher */}
+            <div className="flex gap-1.5 bg-[#f0ede6] p-1.5 rounded-2xl border border-[#e9e2d7] max-w-md mx-auto">
+              <button
+                type="button"
+                onClick={() => setVocabularyViewMode("learn")}
+                className={`flex-1 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer text-center ${
+                  vocabularyViewMode === "learn"
+                    ? "bg-[#2d6a4f] text-white shadow-md font-black"
+                    : "text-[#2d6a4f] hover:text-[#1b4332] hover:bg-white/70"
+                }`}
+              >
+                📚 Study List (ලැයිස්තුව)
+              </button>
+              <button
+                type="button"
+                onClick={() => setVocabularyViewMode("test")}
+                className={`flex-1 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer text-center ${
+                  vocabularyViewMode === "test"
+                    ? "bg-[#2d6a4f] text-white shadow-md font-black"
+                    : "text-[#2d6a4f] hover:text-[#1b4332] hover:bg-white/70"
+                }`}
+              >
+                🧠 Test Practice (පරීක්ෂණය)
+              </button>
+            </div>
+
+            {vocabularyViewMode === "learn" ? (
+              <div className="space-y-6">
+                {/* Header / Banner summary bar */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6" id="vocab-stats-box">
+                  {/* Box 1: Info Deck progress */}
+                  <div className="lg:col-span-8 bg-white p-6 rounded-[28px] border border-[#e9e2d7] shadow-sm flex flex-col justify-between">
+                    <div>
+                      <h3 className="font-display font-black text-lg text-[#354f52] flex items-center gap-2">
+                        <BookText className="w-5 h-5 text-[#2d6a4f]" /> Comprehensive Japanese Vocabulary (ජපන් වචන මාලාව)
+                      </h3>
+                      <p className="text-xs text-[#84a98c] mt-1.5 leading-relaxed">
+                        මෙම කොටසෙන් ඔබට JFT-Basic, JLPT N5, N4 සහ N3 විභාග සඳහා අත්‍යවශ්‍ය වන සම්පූර්ණ වචන මාලාව ({vocabulary.length} Items) අධ්‍යයනය කළ හැක. 
+                        <strong> All, JFT, N5, N4, N3</strong> අනුව කාණ්ඩ කර පහසුවෙන් ඉගෙන ගන්න.
+                      </p>
+                    </div>
+
+                    {/* Progress bar info */}
+                    <div className="mt-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pt-4 border-t border-[#f0ede6]">
+                      <div className="flex-1 w-full space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-[#2d6a4f] uppercase tracking-wider">වචන මාලා ප්‍රගතිය (Vocabulary Mastery)</span>
+                          <span className="text-sm font-extrabold text-[#354f52]">{percentVocabComplete}%</span>
+                        </div>
+                        <div className="w-full bg-[#f0ede6] rounded-full h-2 overflow-hidden shadow-inner">
+                          <div
+                            className="bg-[#2d6a4f] h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${percentVocabComplete}%` }}
+                          ></div>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-4 shrink-0 bg-[#fdfbf7] border border-[#e9e2d7] rounded-xl p-2.5 px-4">
+                        <div className="text-center">
+                          <span className="text-[10px] font-bold text-[#84a98c] block">OK</span>
+                          <span className="text-sm font-extrabold text-[#2d6a4f]">✔️ {okVocabCount}</span>
+                        </div>
+                        <div className="border-l border-[#e9e2d7] pl-4 text-center">
+                          <span className="text-[10px] font-bold text-[#84a98c] block">NOT YET</span>
+                          <span className="text-sm font-extrabold text-[#bc6c25]">❌ {notYetVocabCount}</span>
+                        </div>
+                        <div className="border-l border-[#e9e2d7] pl-4 text-center">
+                          <span className="text-[10px] font-bold text-[#84a98c] block">මුළු එකතුව</span>
+                          <span className="text-sm font-extrabold text-[#354f52]">📋 {vocabulary.length}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Box 2: Actions & Configuration Panel */}
+                  <div className="lg:col-span-4 bg-[#ece2d0]/25 border border-[#e9e2d7] p-6 rounded-[24px] shadow-sm flex flex-col justify-between">
+                    <div>
+                      <h4 className="font-display font-bold text-xs text-[#2d6a4f] uppercase tracking-widest flex items-center gap-1.5" id="vocab-config-title">
+                        ⚙️ Study Settings (සැකසුම්)
+                      </h4>
+                      <p className="text-xs text-[#2f3e46] mt-1.5 leading-relaxed">
+                        කාඩ්පත ක්ලික් කර අනෙක් පැත්ත හරවා උච්චාරණය (Audio) ශ්‍රවණය කරන්න.
+                      </p>
+                    </div>
+
+                    <div className="space-y-2 mt-4">
+                      {/* Perspective Switcher */}
+                      <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-[#e9e2d7]">
+                        <span className="text-xs font-bold text-[#52796f]">පෙරමුණ (Front):</span>
+                        <div className="flex gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setVocabularyPracticePerspective("japanese")}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                              vocabularyPracticePerspective === "japanese"
+                                ? "bg-[#2d6a4f] text-white shadow-xs"
+                                : "text-[#84a98c] hover:bg-[#f0ede6]"
+                            }`}
+                          >
+                            🇯🇵 Japanese
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setVocabularyPracticePerspective("sinhala")}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                              vocabularyPracticePerspective === "sinhala"
+                                ? "bg-[#2d6a4f] text-white shadow-xs"
+                                : "text-[#84a98c] hover:bg-[#f0ede6]"
+                            }`}
+                          >
+                            🇱🇰 සිංහල
+                          </button>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={handleResetVocabularyProgress}
+                        className="w-full py-2 bg-white hover:bg-rose-50 border border-rose-200 text-rose-600 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" /> Reset Vocabulary Progress
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Level Filter Bar: All, JFT, N5, N4, N3 (Just like Kanji!) */}
+                <div className="bg-white p-4 rounded-2xl border border-[#e9e2d7] shadow-sm space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <span className="text-xs font-black text-[#354f52] uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-[#2d6a4f]" /> Level Filter (මට්ටම තෝරන්න):
+                    </span>
+                    <span className="text-xs font-bold text-[#84a98c]">
+                      පෙන්වන්නේ: <span className="font-extrabold text-[#2d6a4f]">{filteredVocabulary.length}</span> / {vocabulary.length}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { id: "ALL", label: "🌟 All (සමස්තය)", stat: vocabLevelStats.all, activeColor: "bg-[#2d6a4f] text-white" },
+                      { id: "JFT", label: "🇯🇵 JFT-Basic", stat: vocabLevelStats.jft, activeColor: "bg-rose-600 text-white" },
+                      { id: "N5", label: "🔰 JLPT N5", stat: vocabLevelStats.n5, activeColor: "bg-amber-600 text-white" },
+                      { id: "N4", label: "📗 JLPT N4", stat: vocabLevelStats.n4, activeColor: "bg-emerald-600 text-white" },
+                      { id: "N3", label: "📘 JLPT N3", stat: vocabLevelStats.n3, activeColor: "bg-blue-600 text-white" }
+                    ].map((btn) => {
+                      const isActive = vocabularyLevelFilter === btn.id;
+                      return (
+                        <button
+                          key={btn.id}
+                          type="button"
+                          onClick={() => {
+                            setVocabularyLevelFilter(btn.id as any);
+                            setSelectedVocabCategory("ALL");
+                            setVisibleVocabCount(24);
+                          }}
+                          className={`px-3.5 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 cursor-pointer shadow-3xs border ${
+                            isActive
+                              ? `${btn.activeColor} border-transparent shadow-sm ring-2 ring-black/10`
+                              : "bg-[#fdfbf7] text-[#354f52] hover:bg-[#f0ede6] border-[#e9e2d7]"
+                          }`}
+                        >
+                          <span>{btn.label}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                            isActive ? "bg-white/20 text-white" : "bg-[#e9dfcc]/50 text-[#52796f]"
+                          }`}>
+                            {btn.stat.total}
+                          </span>
+                          {btn.stat.ok > 0 && (
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                              isActive ? "bg-white/30 text-white" : "bg-emerald-100 text-emerald-800"
+                            }`}>
+                              ✔️ {btn.stat.ok}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Sub-category / Lesson Filter */}
+                  {availableVocabCategories.length > 1 && (
+                    <div className="pt-2 border-t border-[#f0ede6] flex items-center gap-2 flex-wrap">
+                      <span className="text-[11px] font-bold text-[#84a98c]">
+                        {vocabularyLevelFilter === "N3" ? "පාඩම් අංකය (Lesson):" : "කාණ්ඩය (Category):"}
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedVocabCategory("ALL");
+                            setVisibleVocabCount(24);
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                            selectedVocabCategory === "ALL"
+                              ? "bg-[#2d6a4f] text-white shadow-2xs"
+                              : "bg-[#f0ede6] text-[#52796f] hover:bg-[#cad2c5]/40"
+                          }`}
+                        >
+                          All ({vocabularyLevelFilter === "ALL" ? vocabulary.length : (vocabLevelStats as any)[vocabularyLevelFilter.toLowerCase()]?.total || 0})
+                        </button>
+                        {availableVocabCategories.slice(0, 20).map((cat) => (
+                          <button
+                            key={cat}
+                            type="button"
+                            onClick={() => {
+                              setSelectedVocabCategory(cat);
+                              setVisibleVocabCount(24);
+                            }}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                              selectedVocabCategory === cat
+                                ? "bg-[#2d6a4f] text-white shadow-2xs"
+                                : "bg-[#f0ede6] text-[#52796f] hover:bg-[#cad2c5]/40"
+                            }`}
+                          >
+                            {cat}
+                          </button>
+                        ))}
+                        {availableVocabCategories.length > 20 && (
+                          <select
+                            value={selectedVocabCategory}
+                            onChange={(e) => {
+                              setSelectedVocabCategory(e.target.value);
+                              setVisibleVocabCount(24);
+                            }}
+                            className="text-xs bg-[#f0ede6] border border-[#e9e2d7] rounded-lg px-2 py-1 font-bold text-[#52796f] focus:outline-hidden"
+                          >
+                            <option value="ALL">More Lessons...</option>
+                            {availableVocabCategories.map((c) => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Filter and Search Bar */}
+                <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center bg-white p-4 rounded-2xl border border-[#e9e2d7] shadow-sm">
+                  {/* Status tabs */}
+                  <div className="flex flex-col gap-1.5 w-full md:w-auto">
+                    <span className="text-[10px] font-bold text-[#84a98c] uppercase tracking-wider">
+                      Status Filter (ප්‍රගතිය)
+                    </span>
+                    <div className="flex bg-[#f0ede6] p-1 rounded-xl gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setActiveVocabularyFilter("ALL")}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 cursor-pointer ${
+                          activeVocabularyFilter === "ALL"
+                            ? "bg-white text-[#2d6a4f] shadow-xs font-black"
+                            : "text-[#84a98c] hover:text-[#2d6a4f]"
+                        }`}
+                      >
+                        📖 All ({vocabulary.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveVocabularyFilter("NOT_YET")}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 cursor-pointer ${
+                          activeVocabularyFilter === "NOT_YET"
+                            ? "bg-white text-[#bc6c25] shadow-xs font-black"
+                            : "text-[#84a98c] hover:text-[#bc6c25]"
+                        }`}
+                      >
+                        ❌ Not Yet ({notYetVocabCount})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveVocabularyFilter("OK")}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 cursor-pointer ${
+                          activeVocabularyFilter === "OK"
+                            ? "bg-white text-[#2d6a4f] shadow-xs font-black"
+                            : "text-[#84a98c] hover:text-[#2d6a4f]"
+                        }`}
+                      >
+                        ✔️ OK ({okVocabCount})
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Search input */}
+                  <div className="flex flex-col gap-1.5 flex-1 max-w-sm w-full">
+                    <span className="text-[10px] font-bold text-[#84a98c] uppercase tracking-wider">
+                      Search Vocabulary (වචන සොයන්න)
+                    </span>
+                    <div className="relative">
+                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#84a98c]" />
+                      <input
+                        type="text"
+                        value={vocabularySearchQuery}
+                        onChange={(e) => setVocabularySearchQuery(e.target.value)}
+                        placeholder="සොයන්න (e.g. 駐車, parking, gakusei, පාසල...)"
+                        className="w-full text-xs rounded-xl border border-[#e9e2d7] pl-10 pr-4 py-2 bg-[#fdfbf7] focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#2d6a4f]/15 focus:border-[#2d6a4f]"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Vocabulary Card Grid */}
+                {filteredVocabulary.length > 0 ? (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6" id="vocab-deck-layout">
+                      {filteredVocabulary.slice(0, visibleVocabCount).map((v) => (
+                        <VocabularyCardView
+                          key={v.id}
+                          item={v}
+                          practiceMode={vocabularyPracticePerspective}
+                          status={vocabularyProgress[v.id] || "UNSTUDIED"}
+                          onStatusChange={(status) => handleUpdateVocabularyStatus(v.id, status)}
+                        />
+                      ))}
+                    </div>
+
+                    {visibleVocabCount < filteredVocabulary.length && (
+                      <div className="text-center pt-4">
+                        <button
+                          type="button"
+                          onClick={() => setVisibleVocabCount((prev) => prev + 24)}
+                          className="px-6 py-3 bg-[#2d6a4f] hover:bg-[#1b4332] text-white rounded-2xl text-xs font-black shadow-md hover:shadow-lg transition cursor-pointer"
+                        >
+                          තවත් වචන පෙන්වන්න (+24 Load More) • {filteredVocabulary.length - visibleVocabCount} ඉතිරියි
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-12 text-center bg-white rounded-2xl border border-[#e9e2d7] shadow-sm">
+                    <p className="text-sm font-semibold text-slate-400">වචන කිසිවක් හමු නොවීය. Select other search criteria.</p>
+                    <p className="text-xs text-slate-300 mt-1">සෙවුම් පද හෝ Filter එක වෙනස් කර බැලීමට උත්සාහ කරන්න.</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* Test Mode */
+              <div className="max-w-xl mx-auto space-y-6">
+                {/* Description & Deck Configuration */}
+                <div className="bg-white rounded-[24px] border border-[#e9e2d7] p-5 shadow-sm space-y-4">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div>
+                      <h3 className="font-display font-medium text-sm text-[#354f52] flex items-center gap-1.5" id="vocab-test-mode-title">
+                        <Sparkles className="w-4 h-4 text-[#2d6a4f] animate-spin" /> Vocabulary Knowledge Check (වචන මාලා පරීක්ෂණය)
+                      </h3>
+                      <p className="text-xs text-[#84a98c] mt-1 leading-relaxed">
+                        කාඩ්පත පෙරළා බලා මතක නම් "Yes", තවම මතක නැතිනම් "No" ලකුණු කරන්න.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => shuffleVocabTestDeck()}
+                      className="p-2.5 bg-[#f0ede6] hover:bg-[#cad2c5]/45 border border-[#e9e2d7] hover:border-[#84a98c] text-[#2d6a4f] rounded-xl transition duration-150 inline-flex items-center gap-1.5 text-xs font-bold shrink-0 shadow-xs cursor-pointer"
+                      title="Shuffle Deck"
+                    >
+                      <Shuffle className="w-3.5 h-3.5" /> Shuffle
+                    </button>
+                  </div>
+
+                  {/* Level Switcher inside Test Mode */}
+                  <div className="pt-3 border-t border-[#f0ede6] flex flex-wrap gap-2">
+                    {[
+                      { id: "ALL", label: "🌟 All" },
+                      { id: "JFT", label: "🇯🇵 JFT" },
+                      { id: "N5", label: "🔰 N5" },
+                      { id: "N4", label: "📗 N4" },
+                      { id: "N3", label: "📘 N3" }
+                    ].map((lvl) => {
+                      const isActive = vocabularyLevelFilter === lvl.id;
+                      return (
+                        <button
+                          key={lvl.id}
+                          type="button"
+                          onClick={() => {
+                            setVocabularyLevelFilter(lvl.id as any);
+                            setSelectedVocabCategory("ALL");
+                            shuffleVocabTestDeck(lvl.id as any, "ALL");
+                          }}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer border ${
+                            isActive
+                              ? "bg-[#2d6a4f] text-white border-transparent shadow-xs"
+                              : "bg-[#fdfbf7] text-[#354f52] hover:bg-[#f0ede6] border-[#e9e2d7]"
+                          }`}
+                        >
+                          {lvl.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {vocabTestDeck.length > 0 ? (
+                  <div className="space-y-6">
+                    {/* Visual Tracker numbers progress */}
+                    <div className="flex justify-between items-center px-1">
+                      <span className="text-xs font-bold text-[#84a98c] tracking-wider">
+                        DECK POSITION: <span className="font-mono text-[#2f3e46] bg-[#f0ede6] px-2 py-0.5 rounded-md font-extrabold">{currentVocabTestIndex + 1}</span> / {vocabTestDeck.length}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] uppercase font-bold text-[#84a98c] tracking-wider">
+                          Learned Status:
+                        </span>
+                        <span className="font-mono text-xs font-bold py-0.5 px-2 bg-[#f0ede6] text-[#2f3e46] rounded-md">
+                          {vocabularyProgress[vocabTestDeck[currentVocabTestIndex]?.id] || "UNSTUDIED"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Main animated check card container */}
+                    <AnimatePresence mode="wait">
+                      <motion.div
+                        key={vocabTestDeck[currentVocabTestIndex]?.id || "vocab-test"}
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -20 }}
+                        transition={{ duration: 0.2 }}
+                        className="w-full"
+                      >
+                        <VocabularyCardView
+                          key={vocabTestDeck[currentVocabTestIndex]?.id}
+                          item={vocabTestDeck[currentVocabTestIndex]}
+                          practiceMode={vocabularyPracticePerspective}
+                          status={vocabularyProgress[vocabTestDeck[currentVocabTestIndex]?.id] || "UNSTUDIED"}
+                          onReveal={() => setIsVocabTestCardRevealed(true)}
+                          onStatusChange={(status) => handleUpdateVocabularyStatus(vocabTestDeck[currentVocabTestIndex].id, status)}
+                        />
+                      </motion.div>
+                    </AnimatePresence>
+
+                    {/* Prev, Next controls deck navigation buttons */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <button
+                        type="button"
+                        disabled={currentVocabTestIndex === 0}
+                        onClick={() => {
+                          if (currentVocabTestIndex > 0) {
+                            setCurrentVocabTestIndex(currentVocabTestIndex - 1);
+                            setIsVocabTestCardRevealed(false);
+                          }
+                        }}
+                        className="py-3 px-4 bg-white hover:bg-[#f0ede6] disabled:bg-[#fdfbf7] disabled:text-[#cad2c5] border border-[#e9e2d7] rounded-xl font-sans font-bold text-xs text-[#2d6a4f] transition inline-flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <ArrowLeft className="w-4 h-4" /> PREVIOUS
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (currentVocabTestIndex < vocabTestDeck.length - 1) {
+                            setCurrentVocabTestIndex(currentVocabTestIndex + 1);
+                            setIsVocabTestCardRevealed(false);
+                          } else {
+                            if (window.confirm("ඔබ අවසන් කාඩ්පත වෙත ළඟා වී ඇත! නැවත shuffle කිරීමට අවශ්‍ය ද? You reached the end. Re-shuffle the cards?")) {
+                              shuffleVocabTestDeck();
+                            }
+                          }
+                        }}
+                        className="py-3 px-4 bg-[#2d6a4f] hover:bg-[#1b4332] text-white rounded-xl font-sans font-black text-xs transition inline-flex items-center justify-center gap-2 shadow-md hover:shadow-lg cursor-pointer"
+                      >
+                        NEXT <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Additional Quick Action buttons if card has been revealed */}
+                    {isVocabTestCardRevealed && (
+                      <div className="p-4 bg-white border border-[#e9e2d7] rounded-2xl shadow-sm text-center">
+                        <p className="text-xs font-bold text-[#2d6a4f] mb-2">Did you recall this word correctly?</p>
+                        <div className="flex justify-center gap-3">
+                          <button
+                            onClick={() => {
+                              handleUpdateVocabularyStatus(vocabTestDeck[currentVocabTestIndex].id, "NOT_YET");
+                              if (currentVocabTestIndex < vocabTestDeck.length - 1) {
+                                setTimeout(() => {
+                                  setCurrentVocabTestIndex((prev) => prev + 1);
+                                  setIsVocabTestCardRevealed(false);
+                                }, 350);
+                              }
+                            }}
+                            className="py-2.5 px-4 bg-[#bc6c25] hover:bg-[#bc6c25]/90 text-white rounded-xl text-xs font-bold duration-150 inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+                          >
+                            <ThumbsDown className="w-3.5 h-3.5" /> No, forgot it
+                          </button>
+                          <button
+                            onClick={() => {
+                              handleUpdateVocabularyStatus(vocabTestDeck[currentVocabTestIndex].id, "OK");
+                              if (currentVocabTestIndex < vocabTestDeck.length - 1) {
+                                setTimeout(() => {
+                                  setCurrentVocabTestIndex((prev) => prev + 1);
+                                  setIsVocabTestCardRevealed(false);
+                                }, 350);
+                              }
+                            }}
+                            className="py-2.5 px-4 bg-[#2d6a4f] hover:bg-[#1b4332] text-white rounded-xl text-xs font-bold duration-150 inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+                          >
+                            <ThumbsUp className="w-3.5 h-3.5" /> Yes, remembered!
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-12 text-center bg-white rounded-2xl border border-[#e9e2d7]">
+                    <p className="text-sm font-semibold text-[#84a98c]">Your vocabulary study deck is currently empty.</p>
+                  </div>
+                )}
+              </div>
+            )}
+            </div>
+          </div>
+        )}
 
         {/* TAB 4.5: COUNTING SYSTEMS (ගණන් කිරීමේ පසු යෙදුම්) */}
         {activeTab === "counters" && (
@@ -4193,10 +5644,16 @@ export default function App() {
               conjunctionsList={conjunctionsList}
               conjunctionsProgress={conjunctionsProgress}
               countersProgress={countersProgress}
+              vocabularyList={vocabulary}
+              vocabularyProgress={vocabularyProgress}
               onClearProgress={(category) => {
                 if (category === "kanji" || category === "all") {
                   setProgress({});
                   localStorage.removeItem("jft_kanji_progress");
+                }
+                if (category === "vocabulary" || category === "all") {
+                  setVocabularyProgress({});
+                  localStorage.removeItem("jft_vocabulary_progress");
                 }
                 if (category === "verbs" || category === "all") {
                   setVerbsProgress({});

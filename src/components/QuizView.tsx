@@ -100,11 +100,29 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
   // Setup States
   const [activeQuizSubMode, setActiveQuizSubMode] = useState<"standard" | "paragraph" | "drawing">("standard");
   const [quizMode, setQuizMode] = useState<QuizMode>("kanji_reading");
+  const [kanjiLevelFilter, setKanjiLevelFilter] = useState<"ALL" | "JFT" | "N5" | "N4" | "N3">("ALL");
   const [questionCount, setQuestionCount] = useState<number | "ALL">(10);
   const [timeLimit, setTimeLimit] = useState<number>(0); // 0 = NO timer
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [isTimeExpired, setIsTimeExpired] = useState<boolean>(false);
   const [gameState, setGameState] = useState<"setup" | "playing" | "summary">("setup");
+
+  const kanjiLevelCounts = useMemo(() => {
+    let all = kanjiCards.length, jft = 0, n5 = 0, n4 = 0, n3 = 0;
+    kanjiCards.forEach((c) => {
+      if (c.level === "N3" || c.id.startsWith("n3")) {
+        n3++;
+      } else {
+        jft++;
+        if (c.level === "N5" || (c.indexNumber && c.indexNumber <= 150)) {
+          n5++;
+        } else {
+          n4++;
+        }
+      }
+    });
+    return { all, jft, n5, n4, n3 };
+  }, [kanjiCards]);
 
   // Timer countdown helper and effect
   const formatTime = (seconds: number) => {
@@ -678,7 +696,19 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
     } else if (isCountersMode) {
       pool = [...preloadedCounters];
     } else {
-      pool = [...kanjiCards];
+      let filteredKanji = kanjiCards;
+      if (kanjiLevelFilter !== "ALL") {
+        if (kanjiLevelFilter === "JFT") {
+          filteredKanji = kanjiCards.filter(c => c.level === "N5" || c.level === "N4" || !c.id.startsWith("n3"));
+        } else if (kanjiLevelFilter === "N3") {
+          filteredKanji = kanjiCards.filter(c => c.level === "N3" || c.id.startsWith("n3"));
+        } else if (kanjiLevelFilter === "N5") {
+          filteredKanji = kanjiCards.filter(c => c.level === "N5" || (c.indexNumber && c.indexNumber <= 150));
+        } else if (kanjiLevelFilter === "N4") {
+          filteredKanji = kanjiCards.filter(c => c.level === "N4" || (c.indexNumber && c.indexNumber > 150 && !c.id.startsWith("n3")));
+        }
+      }
+      pool = filteredKanji.length > 0 ? filteredKanji : kanjiCards;
     }
 
     if (pool.length === 0) {
@@ -799,14 +829,15 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
         if (!isVerbsMode && !isAdjectivesMode) {
           // Kanji mode
           const kanjiCard = item as KanjiCard;
+          const kanjiPool = pool as KanjiCard[];
           if (quizMode === "kanji_reading") {
             prompt = kanjiCard.kanji;
             correctAnswer = kanjiCard.furigana;
-            options = kanjiCards.map((c) => c.furigana);
+            options = kanjiPool.map((c) => c.furigana);
           } else {
             prompt = kanjiCard.furigana;
             correctAnswer = kanjiCard.kanji;
-            options = kanjiCards.map((c) => c.kanji);
+            options = kanjiPool.map((c) => c.kanji);
           }
         } else if (isVerbsMode) {
           // Verbs mode
@@ -1182,6 +1213,42 @@ export default function QuizView({ kanjiCards, verbsList, adjectivesList, onBack
 
               </div>
             </div>
+
+            {/* Kanji Level Selection for Kanji quiz */}
+            {(quizMode === "kanji_reading" || quizMode === "reading_kanji") && (
+              <div className="space-y-3.5 p-4 bg-[#fdfbf7] rounded-2xl border border-[#e9e2d7]">
+                <h3 className="text-xs font-extrabold text-[#52796f] uppercase tracking-wider flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-[#bc6c25]" /> කන්ජි මට්ටම තෝරන්න (Select Kanji Level)
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { key: "ALL", label: "🌟 All", count: kanjiLevelCounts.all },
+                    { key: "JFT", label: "🇯🇵 JFT", count: kanjiLevelCounts.jft },
+                    { key: "N5", label: "🟢 N5", count: kanjiLevelCounts.n5 },
+                    { key: "N4", label: "🔵 N4", count: kanjiLevelCounts.n4 },
+                    { key: "N3", label: "🟣 N3", count: kanjiLevelCounts.n3 }
+                  ].map((lvl) => (
+                    <button
+                      key={lvl.key}
+                      type="button"
+                      onClick={() => setKanjiLevelFilter(lvl.key as any)}
+                      className={`px-4 py-2 rounded-xl text-xs font-black transition-all border cursor-pointer flex items-center gap-1.5 ${
+                        kanjiLevelFilter === lvl.key
+                          ? "bg-[#52796f] text-white border-[#52796f] shadow-xs"
+                          : "bg-white text-[#52796f] border-[#e9e2d7] hover:bg-[#f0ede6]"
+                      }`}
+                    >
+                      <span>{lvl.label}</span>
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded-md ${
+                        kanjiLevelFilter === lvl.key ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                      }`}>
+                        {lvl.count}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Questions count choice */}
             <div className="space-y-3.5">

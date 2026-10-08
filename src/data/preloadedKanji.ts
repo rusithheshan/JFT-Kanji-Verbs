@@ -1,12 +1,7 @@
-export interface KanjiCard {
-  id: string;
-  kanji: string;
-  furigana: string;
-  onyomi: string;
-  kunyomi: string;
-  sinhalaMeaning: string;
-  englishMeaning: string;
-}
+import { KanjiCard } from "../types";
+import { PRELOADED_N3_KANJI } from "./preloadedN3Kanji";
+
+export type { KanjiCard };
 
 // Compact arrays: [id_num, kanji, furigana, onyomi, kunyomi, sinhala, english]
 const RAW_KANJI: [number, string, string, string, string, string, string][] = [
@@ -461,12 +456,21 @@ const RAW_KANJI: [number, string, string, string, string, string, string][] = [
   [450, "留学する", "りゅうがくする", "リュウ, ガク", "とどまる, まなぶ", "විදේශ අධ්‍යාපනය ලබනවා", "To Study Abroad"]
 ];
 
-export const PRELOADED_KANJI: KanjiCard[] = RAW_KANJI.map((item) => ({
+export const BASE_JFT_KANJI: KanjiCard[] = RAW_KANJI.map((item) => ({
   id: `jft_${item[0]}`,
   kanji: item[1],
   furigana: item[2],
   onyomi: item[3],
   kunyomi: item[4],
   sinhalaMeaning: item[5],
-  englishMeaning: item[6]
+  englishMeaning: item[6],
+  level: (item[0] <= 150 ? "N5" : "N4") as "N5" | "N4",
+  lesson: item[0] <= 150 ? `N5 - L${Math.ceil(item[0] / 15)}` : `N4 - L${Math.ceil((item[0] - 150) / 20)}`,
+  indexNumber: item[0]
 }));
+
+export const PRELOADED_KANJI: KanjiCard[] = [
+  ...BASE_JFT_KANJI,
+  ...PRELOADED_N3_KANJI
+];
+

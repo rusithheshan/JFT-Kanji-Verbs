@@ -6,6 +6,9 @@ export interface KanjiCard {
   kunyomi: string;
   sinhalaMeaning: string;
   englishMeaning: string;
+  level?: "JFT" | "N5" | "N4" | "N3";
+  lesson?: string;
+  indexNumber?: number;
 }
 
 export interface JFTConjunction {
@@ -66,3 +69,18 @@ export interface DictionaryEntry {
   englishMeaning: string;
   searchKeywords?: string[];
 }
+
+export interface VocabularyItem {
+  id: string;
+  kanji: string;
+  reading: string; // Furigana / Kana
+  romaji: string;
+  sinhalaMeaning: string;
+  englishMeaning: string;
+  level: "JFT" | "N5" | "N4" | "N3";
+  partOfSpeech?: "noun" | "verb" | "adjective" | "adverb" | "expression" | "other";
+  page?: number;
+  category?: string;
+  indexNumber?: number;
+}
+
